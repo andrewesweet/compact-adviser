@@ -9,10 +9,11 @@ It is never shown after save, and never written to logs, status lines, error mes
 
 | Sent to `https://api.typesafe.ai/v1/systemone` | Not sent |
 | --- | --- |
-| Bounded user constraints, up to the last 64 visible replies and tool results (clipped), short tool-result excerpts, an existing summary, saved-artifact names, omission markers | System prompts, hidden reasoning, images, environment variables, the API key, complete transcripts |
+| Bounded user constraints, up to the last 64 visible replies and tool results (clipped), short tool-result excerpts, an existing summary, saved-artifact names, omission markers | System prompts, hidden reasoning, images, environment variables, the API key in the model context and request body, complete transcripts |
 
 Redaction of known key patterns and obvious sensitive-file results is best-effort, not a guarantee; do not keep this package loaded for material that must not leave the machine.
 Requests are capped at 32,000 serialized UTF-8 bytes.
+The TypeSafe API key never enters the model context or the request body; it is sent as the Authorization header to authenticate the call.
 Errors, timeouts, malformed responses, and contradictory factors never substitute an affirmative judgment.
 
 Automatic compaction on Pi and Claude Code is experimental and lossy; Codex and Grok are hint-only because an outside process cannot trigger `/compact` in their running sessions.
