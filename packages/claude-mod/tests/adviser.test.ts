@@ -157,7 +157,7 @@ describe("turn-end gates", () => {
     expect(typeof responseLine.answers.done.probabilities.finished).toBe("number");
     expect(typeof responseLine.answers.shape.probabilities.hands_on).toBe("number");
     expect(responseLine.score).toBe(score(parseJudgment(jevAnswer())));
-    expect(responseLine.usage).toBe(0.3);
+    expect(responseLine.usage).toBe(60000 / 167000);
     expect(typeof responseLine.floor).toBe("number");
     expect(responseLine.qualifies).toBe(true);
     expect(w.journal.fsWrites[0]?.path.endsWith("compact-adviser-requests-session-1.jsonl")).toBe(
@@ -483,6 +483,33 @@ describe("turn-end gates", () => {
     await turnEnd($, w);
     expect(w.journal.requests).toHaveLength(2);
     expect(hinted(w)).toBe(true);
+  });
+
+  test("usage follows an enabled auto-compact threshold and otherwise uses the window", async ($, on) => {
+    const w = world(on);
+    w.usage = { tokens: 100000, window: 1000000, autoCompactThreshold: 200000 };
+    w.respond = async () => ({
+      status: 200,
+      text: JSON.stringify(jevAnswer({ completed: 0.75, handsOn: 1 })),
+    });
+    await $.session.start(interactiveStart);
+    await turnEnd($, w);
+    expect(w.journal.statuses.filter((status) => status === HINT)).toHaveLength(1);
+
+    w.usage = { tokens: 100000, window: 1000000 };
+    w.messages = longConversation("the auto-compact threshold is absent");
+    await turn($, w, "absent-threshold");
+    expect(w.journal.statuses.filter((status) => status === HINT)).toHaveLength(1);
+
+    w.usage = {
+      tokens: 100000,
+      window: 1000000,
+      autoCompactThreshold: 200000,
+      autoCompactEnabled: false,
+    };
+    w.messages = longConversation("auto-compact is disabled");
+    await turn($, w, "disabled-auto-compact");
+    expect(w.journal.statuses.filter((status) => status === HINT)).toHaveLength(1);
   });
 
   test("unknown context usage keeps the strictest floor", async ($, on) => {
@@ -813,7 +840,7 @@ describe("commands", () => {
     await $.command.run(commandRun("status"));
     const line = w.journal.logs.at(-1) ?? "";
     expect(line).toBe(
-      "Mode: hint. Minimum: 40,000 tokens. Context: 60,000 (30% of the window; hint floor 0.80). Key: env. No cooldown; semantic checks still apply. Claude Code auto-compacts at 167,000 tokens. Request log: off. Settings: /config (compact-adviser rows) and /compact-adviser.",
+      "Mode: hint. Minimum: 40,000 tokens. Context: 60,000 (36% of the context limit; hint floor 0.77). Key: env. No cooldown; semantic checks still apply. Claude Code auto-compacts at 167,000 tokens. Request log: off. Settings: /config (compact-adviser rows) and /compact-adviser.",
     );
     expect(line.includes(KEY)).toBe(false);
   });
@@ -986,7 +1013,7 @@ describe("settings pane", () => {
     await $.ui.press({ plugin: PLUGIN, key: "menu:status" });
     await drain(w);
     expect(text(await $.ui.render(pane))).toContain(
-      "Mode: off. Minimum: 40,000 tokens. Context: 60,000 (30% of the window; hint floor 0.80). Key: env.",
+      "Mode: off. Minimum: 40,000 tokens. Context: 60,000 (36% of the context limit; hint floor 0.77). Key: env.",
     );
     expect(text(await $.ui.render(pane))).not.toContain("Sharing:");
     await $.ui.press({ plugin: PLUGIN, key: "menu:close" });

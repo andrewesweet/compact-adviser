@@ -64,7 +64,12 @@ export type World = {
   sessionId: string;
   /** The next answers `$.ui.ask` gives, in order; an `undefined` entry dismisses the dialog. */
   answers: (string | undefined)[];
-  usage: { tokens?: number; window: number; autoCompactThreshold?: number };
+  usage: {
+    tokens?: number;
+    window: number;
+    autoCompactThreshold?: number;
+    autoCompactEnabled?: boolean;
+  };
   messages: SessionMessage[];
   /** What TypeSafe answers; the default is a confident checkpoint. */
   respond: (body: string) => Promise<{ status: number; text: string } | { deny: string }>;
@@ -218,7 +223,8 @@ export function world(on: On, options: WorldOptions = {}): World {
         memoryFiles: [],
         mcpTools: [],
         agents: [],
-        isAutoCompactEnabled: w.usage.autoCompactThreshold !== undefined,
+        isAutoCompactEnabled:
+          w.usage.autoCompactEnabled ?? w.usage.autoCompactThreshold !== undefined,
         ...(w.usage.autoCompactThreshold === undefined
           ? {}
           : { autoCompactThreshold: w.usage.autoCompactThreshold }),

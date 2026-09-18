@@ -213,16 +213,28 @@ async function invalidate($: EngineInterface): Promise<void> {
   }
 }
 
-/** Context tokens over the model's window, or NaN when the engine does not know it (strictest floor). */
-function usageFraction(context: { tokens?: number; window: number }): number {
+/** Context tokens over the active limit, or NaN when the engine does not know it (strictest floor). */
+function usageFraction(context: {
+  tokens?: number;
+  window: number;
+  breakdown?: { isAutoCompactEnabled: boolean; autoCompactThreshold?: number };
+}): number {
+  const threshold = context.breakdown?.autoCompactThreshold;
+  const denominator =
+    context.breakdown?.isAutoCompactEnabled &&
+    typeof threshold === "number" &&
+    Number.isFinite(threshold) &&
+    threshold > 0
+      ? threshold
+      : context.window;
   if (
     typeof context.tokens !== "number" ||
     !Number.isFinite(context.tokens) ||
-    !Number.isFinite(context.window) ||
-    context.window <= 0
+    !Number.isFinite(denominator) ||
+    denominator <= 0
   )
     return Number.NaN;
-  return context.tokens / context.window;
+  return context.tokens / denominator;
 }
 
 async function eligible(
@@ -294,7 +306,7 @@ async function judgeCheckpoint($: EngineInterface, epoch: number): Promise<void>
     const latest = await loadConfig($);
     const { key, state: current } = await loadState($);
     const now = await $.clock.now();
-    const { context } = await $.session.usage();
+    const { context } = await $.session.usage({ breakdown: "summary" });
     if (initial.logRequests) {
       try {
         await appendTypeSafeLog(
@@ -641,7 +653,7 @@ async function statusText($: EngineInterface): Promise<string> {
       ? (cooldownReason(state, tokens, await $.clock.now()) ??
         "No cooldown; semantic checks still apply.")
       : "Waiting for fresh model usage.";
-  return `Mode: ${config.mode}${config.mode === "auto" && !config.autoAcknowledged ? " (not confirmed)" : ""}. Minimum: ${formatTokens(config.minContextTokens)} tokens. Context: ${typeof tokens === "number" ? formatTokens(tokens) : "unknown"}${Number.isFinite(usageFraction(usage.context)) ? ` (${Math.round(usageFraction(usage.context) * 100)}% of the window; hint floor ${floorFor(usageFraction(usage.context)).toFixed(2)})` : ""}. ${formatKeyStatus((await resolvedKey($)).source)}. ${cooldown}${engine} Request log: ${config.logRequests ? await sessionLogPath($) : "off"}. Settings: /config (compact-adviser rows) and /compact-adviser.`;
+  return `Mode: ${config.mode}${config.mode === "auto" && !config.autoAcknowledged ? " (not confirmed)" : ""}. Minimum: ${formatTokens(config.minContextTokens)} tokens. Context: ${typeof tokens === "number" ? formatTokens(tokens) : "unknown"}${Number.isFinite(usageFraction(usage.context)) ? ` (${Math.round(usageFraction(usage.context) * 100)}% of the context limit; hint floor ${floorFor(usageFraction(usage.context)).toFixed(2)})` : ""}. ${formatKeyStatus((await resolvedKey($)).source)}. ${cooldown}${engine} Request log: ${config.logRequests ? await sessionLogPath($) : "off"}. Settings: /config (compact-adviser rows) and /compact-adviser.`;
 }
 
 async function snoozeOrDismiss($: EngineInterface, command: "snooze" | "dismiss") {
