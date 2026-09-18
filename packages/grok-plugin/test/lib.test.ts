@@ -4,8 +4,17 @@
 // packages' suites and by packages/pi-extension/test/lockstep.test.ts.
 
 import assert from "node:assert/strict";
+import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import test from "node:test";
-import { DEFAULT_SETTINGS, parseMode, parseSettings, SettingsError } from "../lib/config.ts";
+import {
+  DEFAULT_SETTINGS,
+  parseMode,
+  parseSettings,
+  readSettings,
+  SettingsError,
+} from "../lib/config.ts";
 import { HINT, itemsLine, parsePayload, statusLine } from "../lib/statusline.ts";
 import { type Verdict, verdictApplies } from "../lib/store.ts";
 import { parseChatHistory, userText } from "../lib/transcript.ts";
@@ -199,4 +208,16 @@ test("settings defaults fill in, and a field of the wrong kind is reported", () 
   assert.throws(() => parseSettings({ version: 1, minContextTokens: -1 }), SettingsError);
   assert.throws(() => parseSettings({ version: 1, logRequests: "yes" }), SettingsError);
   assert.deepEqual(parseSettings({ version: 1, statusLineItems: ["weather"] }), DEFAULT_SETTINGS);
+});
+
+test("settings default only when the file is missing", () => {
+  const dir = mkdtempSync(join(tmpdir(), "compact-adviser-settings-"));
+  try {
+    assert.deepEqual(readSettings(join(dir, "missing.json")), DEFAULT_SETTINGS);
+    const blocked = join(dir, "settings.json");
+    mkdirSync(blocked);
+    assert.throws(() => readSettings(blocked), /Cannot read the compact-adviser settings file/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });

@@ -100,9 +100,9 @@ Then two one-time steps, because Grok does not let a plugin do either of them fo
 /compact-adviser install
 ```
 
-That writes `~/.grok/hooks/compact-adviser.json`, because **Grok 1.0.34 lists a plugin's own `hooks/hooks.json` but never loads it into a session**. Hooks in your own Grok home are always trusted, so nothing else is needed; delete that file to remove them. From a shell it is `node "$(grok plugin list --json | jq -r '.[] | select(.name == "compact-adviser") | .path')/bin/adviser.ts" install`. After `install`, `~/.grok/compact-adviser/adviser.sh` resolves the currently installed plugin the same way.
+That writes `~/.grok/hooks/compact-adviser.json`, because **Grok 1.0.34 lists a plugin's own `hooks/hooks.json` but never loads it into a session**. Hooks in your own Grok home are always trusted, so nothing else is needed; delete that file to remove them. From a shell it is `node "$(node -e 'const l=JSON.parse(require("child_process").execFileSync("grok",["plugin","list","--json"],{encoding:"utf8"})); const p=(Array.isArray(l)?l:[]).find(x=>x&&x.name==="compact-adviser"); if(!p||typeof p.path!=="string") throw new Error("compact-adviser is not installed"); process.stdout.write(p.path)')/bin/adviser.ts" install`. After `install`, `~/.grok/compact-adviser/adviser.sh` resolves the currently installed plugin the same way.
 
-Then paste the `[ui.status_line]` block `install` printed into your own `~/.grok/config.toml` and restart Grok. The status row is off by default and only your own config can turn it on - a plugin cannot, and neither can a repository. Grok has one status row, so this script paints the built-in segments (`cwd`, `model`, `context`) too. Minimal render mode has no status row at all.
+Then paste the `[ui.status_line]` block `install` printed into the config.toml path it named and restart Grok. The status row is off by default and only your own config can turn it on - a plugin cannot, and neither can a repository. Grok has one status row, so this script paints the built-in segments (`cwd`, `model`, `context`) too. Minimal render mode has no status row at all.
 
 On Grok, supply the TypeSafe key as `TYPESAFE_API_KEY` in the launch environment or in a cwd `.env`. Do not enter it through `/compact-adviser`; that command is model-mediated and would put the value in the conversation.
 
@@ -115,7 +115,7 @@ On Grok, supply the TypeSafe key as `TYPESAFE_API_KEY` in the launch environment
 | Command exists, no hint | Context is below the constant 40,000-token minimum, the session is not idle, or the last turn was not a settled final answer |
 | Claude Code: "nonessential traffic" | `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC` blocks plugin network requests |
 | No hint in Codex | The hook is untrusted (review it in `/hooks`), Node is older than 22.18, or the hook cannot find Node at all - Codex rebuilds its PATH, so set `COMPACT_ADVISER_NODE` to an absolute `node` path |
-| Grok: no hint row at all | `[ui.status_line]` is not set in your own `~/.grok/config.toml`, or Grok is in minimal render mode |
+| Grok: no hint row at all | `[ui.status_line]` is not set in the `config.toml` `install` named, or Grok is in minimal render mode |
 | Grok: no hint after a completed turn | `install` has not run, so no Stop hook is judging |
 | Pi print / RPC / JSON, Claude `-p`, or `codex exec` | The adviser stays inert in reliably detected non-interactive sessions |
 | Nothing at all, in any host | `COMPACT_ADVISER_DISABLE` is set to a truthy value |
@@ -173,7 +173,7 @@ hint can never be fed back to the model.
 | `/compact-adviser status` | Mode, minimum, context, key source (`env` / `saved` / `.env` / `missing`), cooldown |
 | `/compact-adviser threshold 60000` | Save an absolute token minimum |
 | `/compact-adviser snooze` / `dismiss` | Suppress the next three exchanges, or clear the current hint |
-| `/compact-adviser install` (Grok) | Register the hooks and print the status-line block to paste into `~/.grok/config.toml` |
+| `/compact-adviser install` (Grok) | Register the hooks and print the status-line block to paste into the named `config.toml` |
 
 On Codex the same commands are arguments to the plugin's `src/cli.ts` (`status`, `hint`, `off`,
 `threshold`, `log on|off`, `key set|clear|status`) rather than a slash

@@ -124,8 +124,11 @@ export function readSettings(path: string): Settings {
   let text: string;
   try {
     text = readFileSync(path, "utf8");
-  } catch {
-    return parseSettings(undefined);
+  } catch (error) {
+    if ((error as { code?: string }).code === "ENOENT") return parseSettings(undefined);
+    throw new SettingsError(
+      "Cannot read the compact-adviser settings file; no action is taken.",
+    );
   }
   let parsed: unknown;
   try {

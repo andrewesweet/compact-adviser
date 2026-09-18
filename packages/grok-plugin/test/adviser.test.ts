@@ -4,7 +4,7 @@
 // and asserts what the person would see: a hint on the status row, or nothing at all.
 
 import assert from "node:assert/strict";
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -322,6 +322,7 @@ test("install quotes hook and status-line commands so the shell keeps the path",
   });
   assert.equal(row.code, 0, row.stderr);
   assert.match(row.stdout, /project/);
+  assert.ok(installed.stdout.includes(join(spaced, "config.toml")));
 
   const written = JSON.parse(readFileSync(join(spaced, "hooks", "compact-adviser.json"), "utf8"));
   const hook = written.hooks.Stop[0].hooks[0].command as string;
@@ -392,4 +393,22 @@ test("an unreadable settings file stops the product instead of guessing", async 
   const status = await runCli(["status"], { lab: l });
   assert.equal(status.code, 1);
   assert.match(status.stderr, /Cannot read the compact-adviser mode setting/);
+});
+
+test("a settings path that is not a file does not resume judging", async (t) => {
+  const { l, fixture } = await judgeTurn(t);
+  await runCli(["mode", "off"], { lab: l });
+  const path = join(l.dataDir, "settings.json");
+  rmSync(path);
+  mkdirSync(path);
+  const stop = await runCli(["hook", "stop"], {
+    lab: l,
+    stdin: stopPayload(l),
+    env: keyed(fixture),
+  });
+  assert.equal(stop.code, 0);
+  assert.equal(fixture.bodies.length, 0);
+  const status = await runCli(["status"], { lab: l });
+  assert.equal(status.code, 1);
+  assert.match(status.stderr, /Cannot read the compact-adviser settings file/);
 });

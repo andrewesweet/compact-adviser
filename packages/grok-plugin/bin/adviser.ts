@@ -591,7 +591,7 @@ function statusText(): string {
 }
 
 function setupText(): string {
-  return `Add this to your own ~/.grok/config.toml, then restart Grok:
+  return `Add this to your own ${join(grokHome(env()), "config.toml")}, then restart Grok:
 
 [ui.status_line]
 type = "command"
