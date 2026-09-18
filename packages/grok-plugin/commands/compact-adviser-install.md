@@ -1,5 +1,5 @@
 ---
-description: Show compact-adviser status
+description: Register compact-adviser hooks and print the status-line block
 allowed-tools: run_terminal_command
 ---
 
@@ -7,8 +7,12 @@ Run exactly this command and show the person its output verbatim. Extra words af
 command are ignored; do not pass them to the CLI.
 
 ```
-node "$(node -e 'const l=JSON.parse(require("child_process").execFileSync("grok",["plugin","list","--json"],{encoding:"utf8"})); const p=(Array.isArray(l)?l:[]).find(x=>x&&x.name==="compact-adviser"); if(!p||typeof p.path!=="string") throw new Error("compact-adviser is not installed"); process.stdout.write(p.path)')/bin/adviser.ts" status
+node "$(node -e 'const l=JSON.parse(require("child_process").execFileSync("grok",["plugin","list","--json"],{encoding:"utf8"})); const p=(Array.isArray(l)?l:[]).find(x=>x&&x.name==="compact-adviser"); if(!p||typeof p.path!=="string") throw new Error("compact-adviser is not installed"); process.stdout.write(p.path)')/bin/adviser.ts" install
 ```
+
+This is the one-time setup: it registers the hooks in the person's own Grok home and prints
+the `[ui.status_line]` block they must paste into the config.toml path it named. Only they can
+do that second step; a plugin cannot, and neither can you.
 
 Rules for this command:
 
@@ -19,7 +23,3 @@ Rules for this command:
 - Never pass a TypeSafe API key to the CLI. The key is never entered through Grok. Set
   `TYPESAFE_API_KEY` in the launch environment or a cwd `.env`, or run the CLI from a shell
   outside this session.
-- Never ask the CLI for the hint text, and never paste or paraphrase the hint into the
-  conversation. The hint is only for the status row.
-- If the person asks for automatic compaction, tell them Grok has no automatic mode: nothing
-  outside a running session can trigger `/compact`, so this host suggests and they decide.
