@@ -1,6 +1,5 @@
 /**
- * The Pi extension, the Claude mod, and the Codex plugin must ask TypeSafe the
- * same question.
+ * Every host package must ask TypeSafe the same question.
  *
  * Judge wording is tuned against the judgment-eval corpus, and a tuning pass
  * that lands in one package but not the others would silently ship different
@@ -19,6 +18,10 @@ import * as codex from "../../codex-plugin/src/judge.ts";
 import * as codexLog from "../../codex-plugin/src/log.ts";
 import * as codexSnapshot from "../../codex-plugin/src/snapshot.ts";
 import * as codexState from "../../codex-plugin/src/state.ts";
+import * as grok from "../../grok-plugin/lib/judge.ts";
+import * as grokLog from "../../grok-plugin/lib/log.ts";
+import * as grokSnapshot from "../../grok-plugin/lib/snapshot.ts";
+import * as grokState from "../../grok-plugin/lib/state.ts";
 import * as piContext from "../src/context.ts";
 import * as piDisable from "../src/disable.ts";
 import * as pi from "../src/judge.ts";
@@ -42,11 +45,12 @@ test("every package sends byte-identical request bodies", () => {
   for (const s of [state, { ...state, recent: [] }, {}, null]) {
     assert.equal(claude.requestBody(s), pi.requestBody(s));
     assert.equal(codex.requestBody(s), pi.requestBody(s));
+    assert.equal(grok.requestBody(s), pi.requestBody(s));
   }
 });
 
 test("the question set and the floor schedule match", () => {
-  for (const other of [claude, codex]) {
+  for (const other of [claude, codex, grok]) {
     assert.deepEqual(other.QUESTIONS, pi.QUESTIONS);
     assert.equal(other.FLOOR_MAX, pi.FLOOR_MAX);
     assert.equal(other.FLOOR_MIN, pi.FLOOR_MIN);
@@ -85,6 +89,7 @@ test("every package scores and gates the same judgments the same way", () => {
       for (const [name, other] of [
         ["claude", claude],
         ["codex", codex],
+        ["grok", grok],
       ] as const) {
         assert.equal(other.score(judgment), pi.score(judgment));
         for (const usage of [Number.NaN, 0, 0.3, 0.5, 0.7, 0.85, 1]) {
@@ -120,8 +125,9 @@ test("every package parses the same wire response into the same judgment", () =>
   };
   assert.deepEqual(claude.parseJudgment(response), pi.parseJudgment(response));
   assert.deepEqual(codex.parseJudgment(response), pi.parseJudgment(response));
+  assert.deepEqual(grok.parseJudgment(response), pi.parseJudgment(response));
   assert.equal(claude.qualifies(pi.parseJudgment(response), 0.2), true);
-  for (const other of [claude, codex]) {
+  for (const other of [claude, codex, grok]) {
     assert.equal(
       other.qualifies(pi.parseJudgment(response), 0.2),
       pi.qualifies(pi.parseJudgment(response), 0.2),
@@ -136,7 +142,7 @@ test("every package scrubs owned settings fields and known key values the same w
     typesafeApiKey: secret,
     "compact-adviser.typesafeApiKey": secret,
   });
-  for (const other of [claudeSnapshot, codexSnapshot]) {
+  for (const other of [claudeSnapshot, codexSnapshot, grokSnapshot]) {
     assert.deepEqual(other.redact(dump), piContext.redact(dump));
     assert.deepEqual(other.redactOwnedSettings(dump), piContext.redactOwnedSettings(dump));
     assert.deepEqual(
@@ -172,6 +178,7 @@ test("every package writes the same TypeSafe log line shape", () => {
   for (const [other, judge] of [
     [claudeLog, claude],
     [codexLog, codex],
+    [grokLog, grok],
   ] as const) {
     assert.equal(other.requestLogId(body), piLog.requestLogId(body));
     assert.equal(other.requestLogLine(body, at), piLog.requestLogLine(body, at));
@@ -274,6 +281,7 @@ test("every package applies the same cooldownReason gates", () => {
     for (const [name, other] of [
       ["claude", claudeState],
       ["codex", codexState],
+      ["grok", grokState],
     ] as const) {
       const state = { ...other.initialState(c.compacted, c.now), ...c.patch };
       assert.equal(other.cooldownReason(state, c.tokens, c.now), c.reason, `${name} ${c.name}`);

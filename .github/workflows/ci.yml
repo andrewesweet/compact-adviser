@@ -206,3 +206,79 @@ jobs:
 
       - name: e2e-codex-plugin
         run: npm run test:e2e:codex-plugin
+
+  check-grok-plugin:
+    name: check-grok-plugin
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      GROK_DISABLE_AUTOUPDATER: "1"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Load pinned host versions
+        run: grep -E '^[A-Za-z_][A-Za-z0-9_]*=' .github/host-versions.env >> "$GITHUB_ENV"
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION || '24' }}
+          cache: npm
+          cache-dependency-path: packages/grok-plugin/package-lock.json
+
+      - name: Install pinned Grok
+        run: |
+          set -eu
+          curl -fsSL https://x.ai/cli/install.sh | bash -s "${GROK_VERSION}"
+          echo "$HOME/.grok/bin" >> "$GITHUB_PATH"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Resolve Grok binary
+        run: |
+          set -eu
+          GROK_BIN="$(command -v grok)"
+          echo "COMPACT_TEST_GROK_BIN=${GROK_BIN}" >> "$GITHUB_ENV"
+          echo "Using $(grok --version) at ${GROK_BIN}"
+
+      - name: Install Grok plugin package
+        run: npm --prefix packages/grok-plugin ci --ignore-scripts
+
+      - name: check-grok-plugin
+        run: npm run check:grok-plugin
+
+  e2e-grok-plugin:
+    name: e2e-grok-plugin
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      GROK_DISABLE_AUTOUPDATER: "1"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Load pinned host versions
+        run: grep -E '^[A-Za-z_][A-Za-z0-9_]*=' .github/host-versions.env >> "$GITHUB_ENV"
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION || '24' }}
+          cache: npm
+          cache-dependency-path: packages/grok-plugin/package-lock.json
+
+      - name: Install pinned Grok
+        run: |
+          set -eu
+          curl -fsSL https://x.ai/cli/install.sh | bash -s "${GROK_VERSION}"
+          echo "$HOME/.grok/bin" >> "$GITHUB_PATH"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Resolve Grok binary
+        run: |
+          set -eu
+          GROK_BIN="$(command -v grok)"
+          echo "COMPACT_TEST_GROK_BIN=${GROK_BIN}" >> "$GITHUB_ENV"
+          echo "Using $(grok --version) at ${GROK_BIN}"
+
+      - name: Install Grok plugin package
+        run: npm --prefix packages/grok-plugin ci --ignore-scripts
+
+      - name: e2e-grok-plugin
+        run: npm run test:e2e:grok-plugin

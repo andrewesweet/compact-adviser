@@ -30,13 +30,13 @@
 
 It uses [Jev](https://typesafe.ai) to instantly judge whether the current session is likely at a boundary that's safe to compact.
 
-It can give you a hint to run `/compact` - or, on Pi and Claude Code, if you opt in, it can run it for you at the right time automatically. Codex CLI is hint-only: nothing outside a Codex session can trigger `/compact`.
+It can give you a hint to run `/compact` - or, on Pi and Claude Code, if you opt in, it can run it for you at the right time automatically. Codex CLI and Grok are hint-only: nothing outside their sessions can trigger `/compact`.
 
 Judgment is two one-sentence Jev questions in one request (is the unit finished; is this hands-on work or coordination), composed in code into one score. The hint floor is 0.90 while the context window is mostly empty (through about 10%) and relaxes toward 0.50 by about 90% full - a wrong hint costs most when there is still room. Automatic mode is the same gate, plus a first-use confirmation.
 
 ## Quick Start
 
-Prerequisites: Node 22+ (22.18+ for Codex), and one of [Pi](https://pi.dev) 0.82.0 or newer (verified on **0.85.1**), Claude Code 2.1.274 or newer (verified on **2.1.275**), or Codex CLI 0.153.0 or newer (verified on **0.153.4**), plus a [TypeSafe API key](https://console.typesafe.ai/settings/keys). Supply it as `TYPESAFE_API_KEY` in the launch environment, save it through the host's compact-adviser settings, or put it in `./.env`. Jev is TypeSafe's structured decision model; this package asks it two one-sentence classification questions and never asks it to write a summary.
+Prerequisites: Node 22+ (22.18+ for Codex and Grok), and one of [Pi](https://pi.dev) 0.82.0 or newer (verified on **0.85.1**), Claude Code 2.1.274 or newer (verified on **2.1.275**), Codex CLI 0.153.0 or newer (verified on **0.153.4**), or [Grok Build](https://docs.x.ai/build/overview) 1.0.34 or newer (verified on **1.0.34**), plus a [TypeSafe API key](https://console.typesafe.ai/settings/keys). Supply it as `TYPESAFE_API_KEY` in the launch environment, save it through the host's compact-adviser settings, or put it in `./.env`. Jev is TypeSafe's structured decision model; this package asks it two one-sentence classification questions and never asks it to write a summary.
 
 Installing the package is consent to send eligible checkpoint context to TypeSafe when a key is available and the other product gates pass.
 
@@ -84,6 +84,26 @@ no automatic mode there. Settings live in a small CLI instead of a slash command
 node "$(ls -d "${CODEX_HOME:-$HOME/.codex}"/plugins/cache/*/compact-adviser/*/ | tail -1)src/cli.ts" status
 ```
 
+### Grok Build
+
+Grok is **hint-only**: nothing outside a running session can trigger `/compact`, so there is no automatic mode here. The hint is painted on the status row and never enters the model's context.
+
+```sh
+grok plugin install kunchenguid/compact-adviser#packages/grok-plugin --trust
+```
+
+(Install from the subdirectory, not the repository root: Grok also reads the Claude marketplace index in this repo, so a plain `grok plugin marketplace add` offers two plugins of the same name and refuses an unqualified install.)
+
+Then two one-time steps, because Grok does not let a plugin do either of them for you. Start Grok and run:
+
+```
+/compact-adviser install
+```
+
+That writes `~/.grok/hooks/compact-adviser.json`, because **Grok 1.0.34 lists a plugin's own `hooks/hooks.json` but never loads it into a session**. Hooks in your own Grok home are always trusted, so nothing else is needed; delete that file to remove them. Afterwards the same command is also a plain shell one: `~/.grok/compact-adviser/adviser.sh install`.
+
+Then paste the `[ui.status_line]` block `install` printed into your own `~/.grok/config.toml` and restart Grok. The status row is off by default and only your own config can turn it on - a plugin cannot, and neither can a repository. Grok has one status row, so this script paints the built-in segments (`cwd`, `model`, `context`) too; change them with `/compact-adviser items`. Minimal render mode has no status row at all.
+
 ## If it does nothing
 
 | Symptom | Cause |
@@ -93,8 +113,10 @@ node "$(ls -d "${CODEX_HOME:-$HOME/.codex}"/plugins/cache/*/compact-adviser/*/ |
 | Command exists, no hint | Context is below the constant 40,000-token minimum, the session is not idle, or the last turn was not a settled final answer |
 | Claude Code: "nonessential traffic" | `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC` blocks plugin network requests |
 | No hint in Codex | The hook is untrusted (review it in `/hooks`), Node is older than 22.18, or the hook cannot find Node at all - Codex rebuilds its PATH, so set `COMPACT_ADVISER_NODE` to an absolute `node` path |
+| Grok: no hint row at all | `[ui.status_line]` is not set in your own `~/.grok/config.toml`, or Grok is in minimal render mode |
+| Grok: `FAIL hooks registered` in `/compact-adviser doctor` | `install` has not run, so no Stop hook is judging |
 | Pi print / RPC / JSON, Claude `-p`, or `codex exec` | The adviser stays inert in reliably detected non-interactive sessions |
-| Nothing at all in Pi, Claude, or Codex | `COMPACT_ADVISER_DISABLE` is set to a truthy value |
+| Nothing at all, in any host | `COMPACT_ADVISER_DISABLE` is set to a truthy value |
 
 ## Environment variables
 
@@ -135,7 +157,10 @@ settled turn
 ```
 
 Automatic compaction is available on Pi and Claude Code. On Codex the same judgment only ever
-produces the hint, as a `↳ Hook ·` line in the scrollback.
+produces the hint, as a `↳ Hook ·` line in the scrollback. On Grok the two halves are separate
+processes: a `Stop` hook judges and records a verdict, and the `[ui.status_line]` script reads
+that verdict and paints the hint. The Grok hook always allows the stop and prints nothing, so a
+hint can never be fed back to the model.
 
 ## Usage
 
@@ -146,6 +171,7 @@ produces the hint, as a `↳ Hook ·` line in the scrollback.
 | `/compact-adviser status` | Mode, minimum, context, key source (`env` / `saved` / `.env` / `missing`), cooldown |
 | `/compact-adviser threshold 60000` | Save an absolute token minimum |
 | `/compact-adviser snooze` / `dismiss` | Suppress the next three exchanges, or clear the current hint |
+| `/compact-adviser install` / `setup` / `doctor` / `items` (Grok) | Register the hooks, print the status-line block, check both halves, choose the built-in segments the hint row keeps |
 
 On Codex the same commands are arguments to the plugin's `src/cli.ts` (`status`, `hint`, `off`,
 `threshold`, `log on|off`, `key set|clear|status`) rather than a slash

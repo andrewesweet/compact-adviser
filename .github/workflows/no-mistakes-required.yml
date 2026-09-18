@@ -24,6 +24,9 @@ on:
       - packages/claude-mod/package.json
       - packages/claude-mod/.claude-plugin/plugin.json
       - .claude-plugin/marketplace.json
+      - packages/grok-plugin/package.json
+      - packages/grok-plugin/.grok-plugin/plugin.json
+      - .grok-plugin/marketplace.json
 
 permissions:
   contents: read

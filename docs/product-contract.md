@@ -6,9 +6,9 @@ Each harness implementation owns its event handling, dependencies, installation,
 ## Semantics
 
 - Modes: `hint` (default), `auto` (explicit experimental opt-in), and `off`.
-A host that gives no process outside the session a way to run `/compact` ships `hint` and `off`
-only, and says so rather than offering an `auto` it cannot honour. Codex is such a host.
-- Hint text: Pi and Codex display **Compact adviser: work appears completed or recorded. Run /compact to save tokens.** Claude Code's host adds **compact-adviser:**, so the mod supplies only **work appears completed or recorded. Run /compact to save tokens.**
+A host that gives no process outside the session a way to run `/compact` ships `hint` and `off` only, and says so rather than offering an `auto` it cannot honour. Codex and Grok are such hosts.
+- The hint is shown to the person, never to the model. A hint is never written into the conversation, returned as hook feedback, or used to keep the agent working.
+- Hint text: Pi, Codex, and Grok display **Compact adviser: work appears completed or recorded. Run /compact to save tokens.** Claude Code's host adds **compact-adviser:**, so the mod supplies only **work appears completed or recorded. Run /compact to save tokens.**
 - `minContextTokens` defaults to the constant **40000**, is configurable and persists with the selected mode.
 There is no percentage-of-context-window condition.
 - A size threshold makes a checkpoint eligible for judgment; it does not order compaction.
@@ -34,8 +34,10 @@ Invalid values and cancellation preserve existing settings; failed saves are rep
 | `packages/pi-extension` | Pi implementation | Install this package path with `pi install` |
 | `packages/claude-mod` | Claude Code mod (early-access function-hooks API) | Load this package path with `claude --plugin-dir` and `CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1` |
 | `packages/codex-plugin` | Codex CLI plugin, hint-only | `codex plugin marketplace add` this repository, then `codex plugin add compact-adviser@compact-adviser` |
+| `packages/grok-plugin` | Grok Build plugin, hint-only | `grok plugin install <path> --trust`, then `compact-adviser install` for the hooks and a `[ui.status_line]` opt-in for the hint |
 
 Pi uses its own agent-directory `compact-adviser.json` and Pi session custom entries.
+The Grok plugin uses its own `${GROK_HOME:-~/.grok}/compact-adviser/settings.json`, plus one file per session for cooldowns and one for the verdict the status line reads; its two halves are separate processes, so nothing is held in memory between them.
 The Claude Code mod uses its own `userConfig` options (`mode`, `minContextTokens`, `logRequests`, `typesafeApiKey`) in Claude Code's settings, and its own plugin store for the automatic-mode acknowledgement and per-session cooldowns.
 `typesafeApiKey` is hidden from `/config` so the host menu never draws the secret.
 The Codex plugin owns `<CODEX_HOME>/compact-adviser/`: one `settings.json`, one cooldown record

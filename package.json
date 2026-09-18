@@ -16,7 +16,7 @@
     ]
   },
   "scripts": {
-    "sync-readmes": "node scripts/generate-package-readme.mjs packages/pi-extension/README.md && node scripts/generate-package-readme.mjs packages/claude-mod/README.md && node scripts/generate-package-readme.mjs packages/codex-plugin/README.md",
+    "sync-readmes": "node scripts/generate-package-readme.mjs packages/pi-extension/README.md && node scripts/generate-package-readme.mjs packages/claude-mod/README.md && node scripts/generate-package-readme.mjs packages/codex-plugin/README.md && node scripts/generate-package-readme.mjs packages/grok-plugin/README.md",
     "check": "npm --prefix packages/pi-extension run check",
     "test": "npm --prefix packages/pi-extension test",
     "test:e2e": "npm --prefix packages/pi-extension run test:e2e",
@@ -27,7 +27,11 @@
     "test:e2e:claude-mod": "npm --prefix packages/claude-mod run test:e2e",
     "check:codex-plugin": "npm --prefix packages/codex-plugin run check",
     "test:codex-plugin": "npm --prefix packages/codex-plugin test",
-    "test:e2e:codex-plugin": "npm --prefix packages/codex-plugin run test:e2e"
+    "test:e2e:codex-plugin": "npm --prefix packages/codex-plugin run test:e2e",
+    "check:grok-plugin": "npm --prefix packages/grok-plugin run check",
+    "test:grok-plugin": "npm --prefix packages/grok-plugin test",
+    "test:e2e:grok-plugin": "npm --prefix packages/grok-plugin run test:e2e"
+
   },
   "dependencies": {
     "proper-lockfile": "^4.1.2"
