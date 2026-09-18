@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.1.4](https://github.com/kunchenguid/compact-adviser/compare/compact-adviser-v0.1.3...compact-adviser-v0.1.4) (2026-09-18)
+
+
+### Features
+
+* **codex-plugin:** add Codex CLI host adapter ([#36](https://github.com/kunchenguid/compact-adviser/issues/36)) ([17e441a](https://github.com/kunchenguid/compact-adviser/commit/17e441a81e9dbacfef15756b7d0cca66461a9b98))
+
+
+### Bug Fixes
+
+* **claude-mod:** stop fighting biome over release-please's plugin.json ([#34](https://github.com/kunchenguid/compact-adviser/issues/34)) ([a41f857](https://github.com/kunchenguid/compact-adviser/commit/a41f8575c18bd27941e8ae6e445cef3eee83809f))
+
 ## [0.1.3](https://github.com/kunchenguid/compact-adviser/compare/compact-adviser-v0.1.2...compact-adviser-v0.1.3) (2026-09-18)
 
 
