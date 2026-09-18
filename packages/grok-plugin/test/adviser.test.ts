@@ -361,6 +361,22 @@ test("a malformed transcript line is not judged", async (t) => {
   assert.ok(!row.stdout.includes(HINT));
 });
 
+test("a TypeSafe timeout aborts the in-flight request and stays silent", async (t) => {
+  const { l, fixture } = await judgeTurn(t);
+  fixture.hang = true;
+  const stop = await runCli(["hook", "stop"], {
+    lab: l,
+    stdin: stopPayload(l),
+    env: keyed(fixture),
+  });
+  assert.equal(stop.code, 0);
+  assert.equal(stop.stdout, "");
+  assert.equal(fixture.bodies.length, 1);
+  const row = await runCli(["status-line"], { lab: l, stdin: statusPayload(l) });
+  assert.ok(!row.stdout.includes(HINT));
+  assert.match((await runCli(["status"], { lab: l })).stdout, /Last TypeSafe outcome: timeout/);
+});
+
 test("an oversized TypeSafe response is refused without a hint", async (t) => {
   const { l, fixture } = await judgeTurn(t);
   fixture.oversize = true;

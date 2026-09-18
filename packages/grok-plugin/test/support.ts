@@ -99,6 +99,8 @@ export interface Fixture {
   status?: number;
   /** When true, the body is larger than MAX_RESPONSE_BYTES. */
   oversize: boolean;
+  /** When true, the request is accepted and never answered. */
+  hang: boolean;
 }
 
 export function typesafeFixture(t: TestContext): Promise<Fixture> {
@@ -109,6 +111,7 @@ export function typesafeFixture(t: TestContext): Promise<Fixture> {
     close: () => undefined,
     verdict: { finished: 0.97, handsOn: 0.96 },
     oversize: false,
+    hang: false,
   };
   const choice = (name: string, p: number, others: [string, string]) => ({
     type: "choice",
@@ -123,6 +126,7 @@ export function typesafeFixture(t: TestContext): Promise<Fixture> {
     });
     request.on("end", () => {
       bodies.push(body);
+      if (state.hang) return;
       if (state.status !== undefined) {
         response.writeHead(state.status, { "content-type": "application/json" });
         response.end("{}");

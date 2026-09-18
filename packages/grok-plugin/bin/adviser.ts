@@ -189,6 +189,46 @@ async function readBoundedText(response: Response): Promise<string> {
   return new TextDecoder().decode(all);
 }
 
+function cancellableJudgeTransport(): {
+  fetch: (
+    url: string,
+    init: { method: string; headers: Record<string, string>; body: string },
+  ) => Promise<{ status: number; ok: boolean; text: string }>;
+  sleep: (ms: number) => Promise<void>;
+} {
+  const controller = new AbortController();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const stopTimer = () => {
+    if (timer === undefined) return;
+    clearTimeout(timer);
+    timer = undefined;
+  };
+  return {
+    fetch: async (url, init) => {
+      try {
+        const response = await fetch(url, { ...init, signal: controller.signal });
+        const text = await readBoundedText(response);
+        stopTimer();
+        return { status: response.status, ok: response.ok, text };
+      } catch (error) {
+        stopTimer();
+        if (controller.signal.aborted) {
+          return await new Promise<{ status: number; ok: boolean; text: string }>(() => undefined);
+        }
+        throw error;
+      }
+    },
+    sleep: (ms) =>
+      new Promise((resolve) => {
+        timer = setTimeout(() => {
+          timer = undefined;
+          resolve();
+          controller.abort();
+        }, ms);
+      }),
+  };
+}
+
 export function shellQuote(value: string): string {
   return `'${value.replaceAll("'", "'\\''")}'`;
 }
@@ -316,15 +356,7 @@ async function runStop(payload: HookPayload): Promise<void> {
   let judgment: Awaited<ReturnType<typeof judge>>;
   try {
     judgment = await judge(view.state, activeKey, {
-      fetch: async (url, init) => {
-        const response = await fetch(url, init);
-        return {
-          status: response.status,
-          ok: response.ok,
-          text: await readBoundedText(response),
-        };
-      },
-      sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+      ...cancellableJudgeTransport(),
       ...(endpoint ? { endpoint } : {}),
     });
   } catch (error) {
