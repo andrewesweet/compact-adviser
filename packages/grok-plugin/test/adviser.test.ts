@@ -4,7 +4,8 @@
 // and asserts what the person would see: a hint on the status row, or nothing at all.
 
 import assert from "node:assert/strict";
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { HINT } from "../lib/statusline.ts";
@@ -13,12 +14,12 @@ import {
   PACKAGE_ROOT,
   runCli,
   runLauncher,
+  runShell,
   statusPayload,
   stopPayload,
   typesafeFixture,
   workedHistory,
   writeHistory,
-  writePluginRegistry,
   writeSignals,
 } from "./support.ts";
 
@@ -267,7 +268,6 @@ test("request logging writes the request and the outcome, and never the key", as
 
 test("session start writes launchers that resolve the currently installed plugin", async (t) => {
   const l = lab(t);
-  writePluginRegistry(l);
   await runCli(["hook", "session-start"], {
     lab: l,
     stdin: JSON.stringify({ hook_event_name: "SessionStart", sessionId: l.sessionId }),
@@ -275,27 +275,17 @@ test("session start writes launchers that resolve the currently installed plugin
   for (const name of ["adviser.sh", "status-line.sh"]) {
     assert.ok(existsSync(join(l.dataDir, name)), `${name} written`);
   }
-  const help = await runLauncher(l);
-  assert.equal(help.code, 0);
-  assert.match(help.stdout, /compact-adviser \(Grok\)/);
-
-  const missing = lab(t);
-  await runCli(["hook", "session-start"], {
-    lab: missing,
-    stdin: JSON.stringify({ hook_event_name: "SessionStart", sessionId: missing.sessionId }),
-  });
-  const failed = await runLauncher(missing);
+  const failed = await runLauncher(l);
   assert.notEqual(failed.code, 0);
   assert.match(failed.stderr, /could not find the installed plugin/);
 
-  const viaRoot = await runLauncher(missing, [], { env: { GROK_PLUGIN_ROOT: PACKAGE_ROOT } });
+  const viaRoot = await runLauncher(l, [], { env: { GROK_PLUGIN_ROOT: PACKAGE_ROOT } });
   assert.equal(viaRoot.code, 0);
   assert.match(viaRoot.stdout, /compact-adviser \(Grok\)/);
 });
 
 test("install registers the same handlers the plugin ships, through the stable launcher", async (t) => {
   const l = lab(t);
-  writePluginRegistry(l);
   const installed = await runCli(["install"], { lab: l });
   assert.match(installed.stdout, /Registered the compact-adviser hooks/);
   // The person still has to opt the status row in themselves; say so at install time.
@@ -312,9 +302,35 @@ test("install registers the same handlers the plugin ships, through the stable l
     assert.ok(command.includes(launcher), `${event} runs the stable launcher`);
     assert.ok(!command.includes("GROK_PLUGIN_ROOT"), `${event} needs no plugin environment`);
   }
-  const help = await runLauncher(l);
+  const help = await runLauncher(l, [], { env: { GROK_PLUGIN_ROOT: PACKAGE_ROOT } });
   assert.equal(help.code, 0);
   assert.match(help.stdout, /compact-adviser \(Grok\)/);
+});
+
+test("install quotes hook and status-line commands so the shell keeps the path", async (t) => {
+  const spaced = mkdtempSync(join(tmpdir(), "compact adviser $home-"));
+  t.after(() => rmSync(spaced, { recursive: true, force: true }));
+  const l = lab(t);
+  const installed = await runCli(["install"], { lab: l, env: { GROK_HOME: spaced } });
+  const line = installed.stdout.split("\n").find((row) => row.startsWith("command = "));
+  assert.ok(line, "install printed a status-line command");
+  const statusCommand = JSON.parse(line.slice("command = ".length)) as string;
+  const row = await runShell(statusCommand, {
+    lab: l,
+    stdin: statusPayload(l),
+    env: { GROK_HOME: spaced, GROK_PLUGIN_ROOT: PACKAGE_ROOT },
+  });
+  assert.equal(row.code, 0, row.stderr);
+  assert.match(row.stdout, /project/);
+
+  const written = JSON.parse(readFileSync(join(spaced, "hooks", "compact-adviser.json"), "utf8"));
+  const hook = written.hooks.Stop[0].hooks[0].command as string;
+  const stop = await runShell(hook, {
+    lab: l,
+    stdin: stopPayload(l),
+    env: { GROK_HOME: spaced, GROK_PLUGIN_ROOT: PACKAGE_ROOT },
+  });
+  assert.equal(stop.code, 0, stop.stderr);
 });
 
 test("one turn is judged once even when the Stop gate is registered twice", async (t) => {
@@ -349,6 +365,7 @@ test("an oversized TypeSafe response is refused without a hint", async (t) => {
   assert.equal(fixture.bodies.length, 1);
   const row = await runCli(["status-line"], { lab: l, stdin: statusPayload(l) });
   assert.ok(!row.stdout.includes(HINT));
+  assert.match((await runCli(["status"], { lab: l })).stdout, /Last TypeSafe outcome: response/);
 });
 
 test("setup, doctor, items, and hint are not commands", async (t) => {

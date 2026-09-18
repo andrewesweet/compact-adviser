@@ -163,22 +163,33 @@ export interface RunResult {
   stderr: string;
 }
 
-/** Grok's install registry, pointing `compact-adviser` at this package. */
-export function writePluginRegistry(lab: Lab, pluginRoot = PACKAGE_ROOT): void {
-  mkdirSync(join(lab.home, "installed-plugins"), { recursive: true });
-  writeFileSync(
-    join(lab.home, "installed-plugins", "registry.json"),
-    `${JSON.stringify({
-      version: 1,
-      repos: {
-        "test-compact-adviser": {
-          kind: { type: "Local", source_path: pluginRoot },
-          path: pluginRoot,
-          plugins: { "compact-adviser": { version: "0.1.0" } },
-        },
-      },
-    })}\n`,
-  );
+export function runShell(
+  command: string,
+  options: { lab?: Lab; stdin?: string; env?: Record<string, string | undefined> } = {},
+): Promise<RunResult> {
+  const { lab, stdin = "", env = {} } = options;
+  const child = spawn("sh", ["-c", command], {
+    cwd: lab?.cwd ?? process.cwd(),
+    env: {
+      ...process.env,
+      TYPESAFE_API_KEY: undefined,
+      ...(lab ? { GROK_HOME: lab.home, GROK_SESSION_ID: lab.sessionId } : {}),
+      NO_COLOR: "1",
+      ...env,
+    } as NodeJS.ProcessEnv,
+  });
+  child.stdin.end(stdin);
+  let stdout = "";
+  let stderr = "";
+  child.stdout.on("data", (chunk) => {
+    stdout += chunk;
+  });
+  child.stderr.on("data", (chunk) => {
+    stderr += chunk;
+  });
+  return new Promise((resolve) => {
+    child.on("close", (code) => resolve({ code, stdout, stderr }));
+  });
 }
 
 export function runLauncher(

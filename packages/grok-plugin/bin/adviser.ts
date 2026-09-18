@@ -162,7 +162,7 @@ async function readBoundedText(response: Response): Promise<string> {
       const next = await reader.read();
       if (next.done) break;
       size += next.value.byteLength;
-      if (size > MAX_RESPONSE_BYTES) throw new Error("response");
+      if (size > MAX_RESPONSE_BYTES) return "x".repeat(MAX_RESPONSE_BYTES + 1);
       chunks.push(next.value);
     }
   } finally {
@@ -179,6 +179,10 @@ async function readBoundedText(response: Response): Promise<string> {
     offset += chunk.byteLength;
   }
   return new TextDecoder().decode(all);
+}
+
+export function shellQuote(value: string): string {
+  return `'${value.replaceAll("'", "'\\''")}'`;
 }
 
 function appendLog(sessionId: string, line: string): void {
@@ -383,7 +387,7 @@ function runSessionStart(): void {
 }
 
 const RESOLVE_INSTALLED_PLUGIN = [
-  'const { existsSync, readFileSync } = require("node:fs");',
+  'const { existsSync } = require("node:fs");',
   'const { join } = require("node:path");',
   'const { execFileSync } = require("node:child_process");',
   "const home = process.env.COMPACT_ADVISER_GROK_HOME;",
@@ -392,18 +396,6 @@ const RESOLVE_INSTALLED_PLUGIN = [
   '  const path = join(root, "bin", "adviser.ts");',
   '  return existsSync(path) ? path : "";',
   "}",
-  "try {",
-  '  const parsed = JSON.parse(readFileSync(join(home, "installed-plugins", "registry.json"), "utf8"));',
-  "  for (const repo of Object.values(parsed.repos || {})) {",
-  '    if (repo && repo.plugins && repo.plugins["compact-adviser"]) {',
-  "      const found = entry(repo.path);",
-  "      if (found) {",
-  "        process.stdout.write(found);",
-  "        process.exit(0);",
-  "      }",
-  "    }",
-  "  }",
-  "} catch {}",
   "try {",
   "  const list = JSON.parse(",
   '    execFileSync("grok", ["plugin", "list", "--json"], {',
@@ -491,7 +483,7 @@ export function hookFileBody(): string {
     for (const group of groups) {
       for (const handler of group.hooks) {
         if (handler.command.startsWith(prefix)) {
-          handler.command = `${JSON.stringify(launcher)}${handler.command.slice(prefix.length)}`;
+          handler.command = `${shellQuote(launcher)}${handler.command.slice(prefix.length)}`;
         }
       }
     }
@@ -603,7 +595,7 @@ function setupText(): string {
 
 [ui.status_line]
 type = "command"
-command = ${JSON.stringify(join(dataDir(env()), "status-line.sh"))}
+command = ${JSON.stringify(shellQuote(join(dataDir(env()), "status-line.sh")))}
 
 The status row is off by default and only your own config can turn it on: installing a plugin
 cannot set it, and a repository cannot either. Grok has one status row, so this script paints
