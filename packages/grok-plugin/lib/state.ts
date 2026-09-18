@@ -19,9 +19,8 @@ export interface SessionState {
   lastHintAt: number | null;
   lastHintKey: string | null;
   /**
-   * The turn this session's Stop gate has already handled. Grok's hook layers are additive,
-   * so the same gate can be registered twice (a plugin copy and a user copy); judging the
-   * same turn twice would ask TypeSafe twice for one checkpoint.
+   * The turn this session's Stop gate has already handled. A later serial run of the same
+   * turn is skipped so it does not ask TypeSafe again.
    */
   lastPromptId: string | null;
   snoozeUntil: number;
