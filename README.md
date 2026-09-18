@@ -36,7 +36,7 @@ Judgment is two one-sentence Jev questions in one request (is the unit finished;
 
 ## Quick Start
 
-Prerequisites: Node 22+ (22.18+ for Codex and Grok), and one of [Pi](https://pi.dev) 0.82.0 or newer (verified on **0.85.1**), Claude Code 2.1.274 or newer (verified on **2.1.275**), Codex CLI 0.153.0 or newer (verified on **0.153.4**), or [Grok Build](https://docs.x.ai/build/overview) 1.0.34 or newer (verified on **1.0.34**), plus a [TypeSafe API key](https://console.typesafe.ai/settings/keys). Supply it as `TYPESAFE_API_KEY` in the launch environment or put it in `./.env`; Pi, Claude Code, and Codex also let you save it through their external compact-adviser settings. Jev is TypeSafe's structured decision model; this package asks it two one-sentence classification questions and never asks it to write a summary.
+Prerequisites: Node 22+ (22.18+ for Codex and Grok), and one of [Pi](https://pi.dev) 0.82.0 or newer (verified on **0.85.1**), Claude Code 2.1.274 or newer (verified on **2.1.275**), Codex CLI 0.153.0 or newer (verified on **0.153.4**), or [Grok Build](https://docs.x.ai/build/overview) 1.0.34 or newer (verified on **1.0.34**), plus a [TypeSafe API key](https://console.typesafe.ai/settings/keys). Supply it as `TYPESAFE_API_KEY` in the launch environment or put it in `./.env`; Pi and Claude Code can also save it through their settings, while Codex and Grok provide an external compact-adviser CLI. Jev is TypeSafe's structured decision model; this package asks it two one-sentence classification questions and never asks it to write a summary.
 
 Installing the package is consent to send eligible checkpoint context to TypeSafe when a key is available and the other product gates pass.
 
@@ -124,7 +124,7 @@ On Grok, save the TypeSafe key as `TYPESAFE_API_KEY` or a cwd `.env`, or with th
 
 | Variable | Effect |
 | --- | --- |
-| `TYPESAFE_API_KEY` | The Jev key, unless one is saved in `/compact-adviser` or `./.env` |
+| `TYPESAFE_API_KEY` | The Jev key; a saved key or cwd `./.env` is used when this is unset |
 | `COMPACT_ADVISER_DISABLE` | `1`, `true`, `yes` or `on` (any case) makes the session inert: no TypeSafe request, no hint, no automatic compaction, no command. It wins over a saved `hint` or `auto` mode |
 | `CLAUDE_CODE_ENABLE_FUNCTION_HOOKS` | Claude Code only; must be exactly `1` for the mod to load |
 | `COMPACT_ADVISER_NODE` | Codex only; absolute path to a Node 22.18 or newer executable when the hook cannot find one on its rebuilt PATH |

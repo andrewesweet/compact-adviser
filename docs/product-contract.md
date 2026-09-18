@@ -34,7 +34,7 @@ Invalid values and cancellation preserve existing settings; failed saves are rep
 | `packages/pi-extension` | Pi implementation | Install this package path with `pi install` |
 | `packages/claude-mod` | Claude Code mod (early-access function-hooks API) | Load this package path with `claude --plugin-dir` and `CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1` |
 | `packages/codex-plugin` | Codex CLI plugin, hint-only | `codex plugin marketplace add` this repository, then `codex plugin add compact-adviser@compact-adviser` |
-| `packages/grok-plugin` | Grok Build plugin, hint-only | `grok plugin install <path> --trust`, then `compact-adviser install` for the hooks and a `[ui.status_line]` opt-in for the hint |
+| `packages/grok-plugin` | Grok Build plugin, hint-only | `grok plugin install <path> --trust`, then `/compact-adviser-install` for the hooks and a `[ui.status_line]` opt-in for the hint |
 
 Pi uses its own agent-directory `compact-adviser.json` and Pi session custom entries.
 The Grok plugin uses its own `${GROK_HOME:-~/.grok}/compact-adviser/settings.json`, plus one file per session for cooldowns and one for the verdict the status line reads; its two halves are separate processes, so nothing is held in memory between them.
