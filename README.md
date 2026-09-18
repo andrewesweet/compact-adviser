@@ -104,7 +104,7 @@ That writes `${GROK_HOME:-~/.grok}/hooks/compact-adviser.json`, because **Grok 1
 
 Then paste the `[ui.status_line]` block `install` printed into the config.toml path it named and restart Grok. The status row is off by default and only your own config can turn it on - a plugin cannot, and neither can a repository. Grok has one status row, so this script paints the built-in segments (`cwd`, `model`, `context`) too. Minimal render mode has no status row at all.
 
-On Grok, save the TypeSafe key as `TYPESAFE_API_KEY` or a cwd `.env`, or with the CLI `key` command from a shell outside Grok. The adapter never puts the key in a TypeSafe request. Do not type secrets after a Grok slash command; Grok appends those words to the model.
+On Grok, save the TypeSafe key as `TYPESAFE_API_KEY` or a cwd `.env`, or with the CLI `key` command from a shell outside Grok. Do not type secrets after a Grok slash command; Grok appends those words to the model.
 
 ## If it does nothing
 
@@ -139,6 +139,7 @@ Export `COMPACT_ADVISER_DISABLE=1` for unattended agent sessions, where advice h
 | Best-effort redaction of known key patterns and obvious sensitive-file results | A guarantee. Uninstall or set mode Off for material that must not leave the machine |
 
 Requests go to `https://api.typesafe.ai/v1/systemone`, are capped at 32,000 serialized UTF-8 bytes, and never treat an error as an affirmative judgment.
+The TypeSafe API key never enters the model context or the request body; it is sent as the Authorization header to authenticate the call.
 Details: [SECURITY.md](SECURITY.md).
 
 ## How It Works

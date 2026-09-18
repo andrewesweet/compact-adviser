@@ -48,6 +48,10 @@ function basename(path: string): string {
   return cut >= 0 ? trimmed.slice(cut + 1) : trimmed;
 }
 
+function sanitize(text: string): string {
+  return text.replace(/[\u0000-\u001f\u007f-\u009f]/g, "");
+}
+
 function elide(text: string, limit: number): string {
   return text.length <= limit ? text : `${text.slice(0, Math.max(0, limit - 1))}…`;
 }
@@ -55,9 +59,15 @@ function elide(text: string, limit: number): string {
 export function itemsLine(payload: StatusPayload): string {
   const parts: string[] = [];
   const dir = payload.workspace?.current_dir ?? payload.cwd;
-  if (dir) parts.push(elide(basename(dir), 40));
+  if (dir) {
+    const folder = sanitize(basename(dir));
+    if (folder) parts.push(elide(folder, 40));
+  }
   const name = payload.model?.display_name ?? payload.model?.id;
-  if (name) parts.push(elide(name, 30));
+  if (name) {
+    const model = sanitize(name);
+    if (model) parts.push(elide(model, 30));
+  }
   const percent = payload.context_window?.used_percentage;
   if (typeof percent === "number" && Number.isFinite(percent)) {
     parts.push(`${Math.round(percent)}% ctx`);

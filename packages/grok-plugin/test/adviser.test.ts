@@ -414,3 +414,61 @@ test("a settings path that is not a file does not resume judging", async (t) => 
   assert.equal(status.code, 1);
   assert.match(status.stderr, /Cannot read the compact-adviser settings file/);
 });
+
+test("COMPACT_ADVISER_DISABLE takes every product action out of the session", async (t) => {
+  const { l, fixture } = await judgeTurn(t);
+  const env = { ...keyed(fixture), COMPACT_ADVISER_DISABLE: "1" };
+  const stop = await runCli(["hook", "stop"], { lab: l, stdin: stopPayload(l), env });
+  assert.equal(stop.code, 0);
+  assert.equal(stop.stdout, "");
+  assert.equal(fixture.bodies.length, 0);
+
+  const row = await runCli(["status-line"], { lab: l, stdin: statusPayload(l), env });
+  assert.ok(!row.stdout.includes(HINT));
+  assert.match(row.stdout, /project │ Grok 4\.6/);
+
+  const status = await runCli(["status"], { lab: l, env });
+  assert.equal(status.code, 1);
+  assert.match(status.stderr, /COMPACT_ADVISER_DISABLE/);
+
+  const mode = await runCli(["mode", "off"], { lab: l, env });
+  assert.equal(mode.code, 1);
+
+  const installed = await runCli(["install"], { lab: l, env });
+  assert.equal(installed.code, 1);
+  assert.equal(existsSync(join(l.home, "hooks", "compact-adviser.json")), false);
+});
+
+test("COMPACT_ADVISER_DISABLE hides an already earned hint", async (t) => {
+  const { l, fixture } = await judgeTurn(t);
+  await runCli(["hook", "stop"], { lab: l, stdin: stopPayload(l), env: keyed(fixture) });
+  assert.ok(
+    (await runCli(["status-line"], { lab: l, stdin: statusPayload(l) })).stdout.includes(HINT),
+  );
+  const row = await runCli(["status-line"], {
+    lab: l,
+    stdin: statusPayload(l),
+    env: { COMPACT_ADVISER_DISABLE: "1" },
+  });
+  assert.ok(!row.stdout.includes(HINT));
+  assert.match(row.stdout, /project │ Grok 4\.6/);
+});
+
+test("install reports a launcher write failure instead of succeeding", async (t) => {
+  const l = lab(t);
+  writeFileSync(l.dataDir, "not a directory");
+  const installed = await runCli(["install"], { lab: l });
+  assert.notEqual(installed.code, 0);
+  assert.equal(existsSync(join(l.home, "hooks", "compact-adviser.json")), false);
+});
+
+test("session start stays silent when launchers cannot be written", async (t) => {
+  const l = lab(t);
+  writeFileSync(l.dataDir, "not a directory");
+  const start = await runCli(["hook", "session-start"], {
+    lab: l,
+    stdin: JSON.stringify({ hook_event_name: "SessionStart", sessionId: l.sessionId }),
+  });
+  assert.equal(start.code, 0);
+  assert.equal(start.stdout, "");
+});

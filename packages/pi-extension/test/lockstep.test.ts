@@ -18,6 +18,7 @@ import * as codex from "../../codex-plugin/src/judge.ts";
 import * as codexLog from "../../codex-plugin/src/log.ts";
 import * as codexSnapshot from "../../codex-plugin/src/snapshot.ts";
 import * as codexState from "../../codex-plugin/src/state.ts";
+import * as grokDisable from "../../grok-plugin/lib/disable.ts";
 import * as grok from "../../grok-plugin/lib/judge.ts";
 import * as grokLog from "../../grok-plugin/lib/log.ts";
 import * as grokSnapshot from "../../grok-plugin/lib/snapshot.ts";
@@ -293,9 +294,9 @@ test("every package reads the same COMPACT_ADVISER_DISABLE values the same way",
   assert.equal(piDisable.DISABLE_ENV, "COMPACT_ADVISER_DISABLE");
   const truthy = ["1", "true", "TRUE", "True", "yes", "YES", "on", "ON", " on ", "\ttrue\n"];
   const falsy = ["0", "false", "no", "off", "", " ", "2", "1 0", "enabled", undefined];
-  for (const other of [claudeDisable, codexDisable]) {
-    assert.equal(other.DISABLE_ENV, piDisable.DISABLE_ENV);
-    for (const value of [...truthy, ...falsy]) {
+  for (const value of [...truthy, ...falsy]) {
+    for (const other of [claudeDisable, codexDisable, grokDisable]) {
+      assert.equal(other.DISABLE_ENV, piDisable.DISABLE_ENV);
       assert.equal(
         other.disabledByEnv(value),
         piDisable.disabledByEnv(value),

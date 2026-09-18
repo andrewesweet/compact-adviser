@@ -46,6 +46,7 @@ import {
   STATUS_LINE_ITEMS,
   writeSettings,
 } from "../lib/config.ts";
+import { DISABLE_ENV, disabledByEnv } from "../lib/disable.ts";
 import { formatKeyStatus, parseDotenvKey, resolveTypesafeApiKey } from "../lib/env.ts";
 import {
   floorFor,
@@ -389,7 +390,11 @@ function runCompact(payload: HookPayload): void {
  * prunes records of sessions that ended long ago.
  */
 function runSessionStart(): void {
-  writeLaunchers();
+  try {
+    writeLaunchers();
+  } catch {
+    // Without the launchers the hint cannot be painted, but the turn is not ours to fail.
+  }
   pruneStale();
 }
 
@@ -453,14 +458,10 @@ export function statusLineLauncherBody(): string {
 
 function writeLaunchers(): void {
   const dir = dataDir(env());
-  try {
-    mkdirSync(dir, { recursive: true });
-    writeFileSync(join(dir, "resolve.cjs"), `${RESOLVE_INSTALLED_PLUGIN}\n`, { mode: 0o600 });
-    writeFileSync(join(dir, "adviser.sh"), launcherBody(), { mode: 0o700 });
-    writeFileSync(join(dir, "status-line.sh"), statusLineLauncherBody(), { mode: 0o700 });
-  } catch {
-    // Without the launchers the hint cannot be painted, but the turn is not ours to fail.
-  }
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, "resolve.cjs"), `${RESOLVE_INSTALLED_PLUGIN}\n`, { mode: 0o600 });
+  writeFileSync(join(dir, "adviser.sh"), launcherBody(), { mode: 0o700 });
+  writeFileSync(join(dir, "status-line.sh"), statusLineLauncherBody(), { mode: 0o700 });
 }
 
 export function hookFilePath(env: Env = process.env): string {
@@ -671,6 +672,20 @@ function runCommand(argv: readonly string[]): string {
 
 async function main(argv: readonly string[]): Promise<void> {
   const [command = "", ...rest] = argv;
+  if (disabledByEnv(process.env[DISABLE_ENV])) {
+    if (command === "hook") process.exit(0);
+    if (command === "status-line") {
+      try {
+        process.stdout.write(
+          statusLine(parsePayload(readStdin()), false, process.env.NO_COLOR === undefined),
+        );
+      } catch {
+        // A broken row is worse than no row; print nothing and let Grok keep the last one.
+      }
+      process.exit(0);
+    }
+    fail("COMPACT_ADVISER_DISABLE is set; compact-adviser is taking no action.");
+  }
   if (command === "hook") {
     // Every hook path is fail-open and silent: the turn must not notice this process at all.
     try {

@@ -154,6 +154,23 @@ test("unusable status-line input paints the built-ins rather than an error", () 
   assert.equal(statusLine(parsePayload("not json"), false, false), "\n");
 });
 
+test("payload-derived status segments cannot inject extra lines or escapes", () => {
+  const payload = parsePayload(
+    JSON.stringify({
+      workspace: { current_dir: "/repo/evil\nFAKE\u001b[31m" },
+      model: { display_name: "Grok\r\n4.6\u0007" },
+      context_window: { used_percentage: 10 },
+    }),
+  );
+  const line = itemsLine(payload);
+  assert.equal(line.includes("\n"), false);
+  assert.equal(line.includes("\r"), false);
+  assert.equal(line.includes("\u001b"), false);
+  assert.equal(line.includes("\u0007"), false);
+  const row = statusLine(payload, false, false);
+  assert.equal(row.split("\n").length, 2);
+});
+
 test("a verdict expires with the turn, the window, and the clock", () => {
   const now = 1_000_000_000;
   const verdict: Verdict = {
