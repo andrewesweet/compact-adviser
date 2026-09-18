@@ -171,12 +171,13 @@ hint can never be fed back to the model.
 | `/compact-adviser` (Pi and Claude Code) | Settings (mode, minimum, request log, TypeSafe API key) |
 | `/compact-adviser auto` / `hint` / `off` (Pi and Claude Code) | Save that mode; auto asks for first-use confirmation |
 | `/compact-adviser status` (Pi and Claude Code) | Mode, minimum, context, key source (`env` / `saved` / `.env` / `missing`), cooldown |
-| `/compact-adviser threshold 60000` (Pi and Claude Code; Grok from a shell) | Save an absolute token minimum |
+| `/compact-adviser threshold 60000` (Pi and Claude Code) | Save an absolute token minimum |
 | `/compact-adviser snooze` / `dismiss` (Pi and Claude Code) | Suppress the next three exchanges, or clear the current hint |
-| `/compact-adviser` (Grok) | Status; extra words after the command are ignored |
+| `/compact-adviser` (Grok) | Show status; do not add arguments because Grok sends them to the model |
 | `/compact-adviser-hint` / `/compact-adviser-off` (Grok) | Save hint-only mode, or disable the adviser |
 | `/compact-adviser-snooze` / `/compact-adviser-dismiss` (Grok) | Suppress the next three exchanges, or clear the current hint |
 | `/compact-adviser-install` (Grok) | Register the hooks and print the status-line block to paste into the named `config.toml` |
+| `${GROK_HOME:-$HOME/.grok}/compact-adviser/adviser.sh threshold 60000` (Grok shell) | Save an absolute token minimum; `help` lists the other shell-only settings |
 
 On Codex the same commands are arguments to the plugin's `src/cli.ts` (`status`, `hint`, `off`,
 `threshold`, `log on|off`, `key set|clear|status`) rather than a slash
