@@ -49,6 +49,7 @@ function basename(path: string): string {
 }
 
 function sanitize(text: string): string {
+  // biome-ignore lint/suspicious/noControlCharactersInRegex: terminal control characters are the input being removed
   return text.replace(/[\u0000-\u001f\u007f-\u009f]/g, "");
 }
 

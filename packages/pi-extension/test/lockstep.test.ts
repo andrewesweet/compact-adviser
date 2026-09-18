@@ -282,11 +282,12 @@ test("every package applies the same cooldownReason gates", () => {
     for (const [name, other] of [
       ["claude", claudeState],
       ["codex", codexState],
-      ["grok", grokState],
     ] as const) {
       const state = { ...other.initialState(c.compacted, c.now), ...c.patch };
       assert.equal(other.cooldownReason(state, c.tokens, c.now), c.reason, `${name} ${c.name}`);
     }
+    const grok = { ...grokState.initialState(c.compacted, c.now), ...c.patch };
+    assert.equal(grokState.cooldownReason(grok, c.tokens, c.now), c.reason, `grok ${c.name}`);
   }
 });
 
