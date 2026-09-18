@@ -15,4 +15,4 @@ Rules for this command:
 - Run that CLI command only. Do not edit files under `${GROK_HOME:-~/.grok}` or any other file
   yourself, and do not guess at a setting the CLI did not report.
 - Print what the CLI printed.
-- Never pass a TypeSafe API key to the CLI. The key is never entered through Grok.
+- Never pass a TypeSafe API key to the CLI. Do not type secrets after this slash command; Grok appends extra words to the model.

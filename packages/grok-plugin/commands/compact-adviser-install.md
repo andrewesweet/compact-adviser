@@ -20,6 +20,6 @@ Rules for this command:
   yourself, and do not guess at a setting the CLI did not report.
 - Print what the CLI printed. It never prints a TypeSafe API key, only where the key in effect
   came from, so there is nothing to redact - and nothing to paraphrase either.
-- Never pass a TypeSafe API key to the CLI. The key is never entered through Grok. Set
-  `TYPESAFE_API_KEY` in the launch environment or a cwd `.env`, or run the CLI from a shell
-  outside this session.
+- Never pass a TypeSafe API key to the CLI. Save the key from a shell outside this session, or
+  set `TYPESAFE_API_KEY` or a cwd `.env`. Do not type secrets after this slash command; Grok
+  appends extra words to the model.
