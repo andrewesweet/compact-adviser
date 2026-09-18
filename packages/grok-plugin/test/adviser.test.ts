@@ -297,7 +297,10 @@ test("install registers the same handlers the plugin ships, through the stable l
   );
   assert.deepEqual(Object.keys(written.hooks), Object.keys(shipped.hooks));
   const launcher = join(l.dataDir, "adviser.sh");
-  for (const [event, groups] of Object.entries(written.hooks) as [string, any][]) {
+  for (const [event, groups] of Object.entries(written.hooks) as [
+    string,
+    [{ hooks: [{ command: string }] }],
+  ][]) {
     const command = groups[0].hooks[0].command;
     assert.ok(command.includes(launcher), `${event} runs the stable launcher`);
     assert.ok(!command.includes("GROK_PLUGIN_ROOT"), `${event} needs no plugin environment`);

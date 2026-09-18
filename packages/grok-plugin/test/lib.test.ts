@@ -133,7 +133,10 @@ test("the status row keeps the built-in segments it displaces, and omits what Gr
     }),
   );
   assert.equal(itemsLine(payload), "project │ Grok 4.6 │ 61% ctx");
-  assert.equal(itemsLine(parsePayload(JSON.stringify({ workspace: { current_dir: "/repo/project" } }))), "project");
+  assert.equal(
+    itemsLine(parsePayload(JSON.stringify({ workspace: { current_dir: "/repo/project" } }))),
+    "project",
+  );
   assert.equal(itemsLine({}), "");
 });
 

@@ -36,7 +36,6 @@ import {
 import { join } from "node:path";
 import {
   DEFAULT_MINIMUM,
-  STATUS_LINE_ITEMS,
   formatTokens,
   parseMinimum,
   parseMode,
@@ -44,10 +43,18 @@ import {
   readSettings,
   type Settings,
   SettingsError,
+  STATUS_LINE_ITEMS,
   writeSettings,
 } from "../lib/config.ts";
 import { formatKeyStatus, parseDotenvKey, resolveTypesafeApiKey } from "../lib/env.ts";
-import { floorFor, judge, MAX_RESPONSE_BYTES, qualifies, requestBody, score } from "../lib/judge.ts";
+import {
+  floorFor,
+  judge,
+  MAX_RESPONSE_BYTES,
+  qualifies,
+  requestBody,
+  score,
+} from "../lib/judge.ts";
 import {
   errorLogLine,
   loggedJudgeErrorKind,
@@ -423,8 +430,10 @@ export function launcherBody(): string {
     '  entry="$GROK_PLUGIN_ROOT/bin/adviser.ts"',
     "fi",
     'if [ -z "$entry" ]; then',
+    // biome-ignore lint/suspicious/noTemplateCurlyInString: generated shell parameter expansion
     '  home="${GROK_HOME:-$HOME/.grok}"',
     '  case "$home" in',
+    // biome-ignore lint/suspicious/noTemplateCurlyInString: generated shell parameter expansion
     '    */) home="${home%/}" ;;',
     "  esac",
     '  entry=$(COMPACT_ADVISER_GROK_HOME="$home" node "$dir/resolve.cjs" </dev/null)',
@@ -439,11 +448,7 @@ export function launcherBody(): string {
 }
 
 export function statusLineLauncherBody(): string {
-  return [
-    "#!/bin/sh",
-    'exec "$(dirname "$0")/adviser.sh" status-line "$@"',
-    "",
-  ].join("\n");
+  return ["#!/bin/sh", 'exec "$(dirname "$0")/adviser.sh" status-line "$@"', ""].join("\n");
 }
 
 function writeLaunchers(): void {
@@ -545,9 +550,7 @@ function runStatusLine(): void {
     hint =
       verdict !== undefined && verdictApplies(verdict, Date.now(), payload.prompt_id, usage.tokens);
   }
-  process.stdout.write(
-    statusLine(payload, hint, process.env.NO_COLOR === undefined),
-  );
+  process.stdout.write(statusLine(payload, hint, process.env.NO_COLOR === undefined));
 }
 
 // --- the person-facing commands -----------------------------------------------------

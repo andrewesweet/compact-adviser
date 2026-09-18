@@ -36,7 +36,7 @@ Judgment is two one-sentence Jev questions in one request (is the unit finished;
 
 ## Quick Start
 
-Prerequisites: Node 22+ (22.18+ for Codex and Grok), and one of [Pi](https://pi.dev) 0.82.0 or newer (verified on **0.85.1**), Claude Code 2.1.274 or newer (verified on **2.1.275**), Codex CLI 0.153.0 or newer (verified on **0.153.4**), or [Grok Build](https://docs.x.ai/build/overview) 1.0.34 or newer (verified on **1.0.34**), plus a [TypeSafe API key](https://console.typesafe.ai/settings/keys). Supply it as `TYPESAFE_API_KEY` in the launch environment, save it through the host's compact-adviser settings, or put it in `./.env`. Jev is TypeSafe's structured decision model; this package asks it two one-sentence classification questions and never asks it to write a summary.
+Prerequisites: Node 22+ (22.18+ for Codex and Grok), and one of [Pi](https://pi.dev) 0.82.0 or newer (verified on **0.85.1**), Claude Code 2.1.274 or newer (verified on **2.1.275**), Codex CLI 0.153.0 or newer (verified on **0.153.4**), or [Grok Build](https://docs.x.ai/build/overview) 1.0.34 or newer (verified on **1.0.34**), plus a [TypeSafe API key](https://console.typesafe.ai/settings/keys). Supply it as `TYPESAFE_API_KEY` in the launch environment or put it in `./.env`; Pi, Claude Code, and Codex also let you save it through their external compact-adviser settings. Jev is TypeSafe's structured decision model; this package asks it two one-sentence classification questions and never asks it to write a summary.
 
 Installing the package is consent to send eligible checkpoint context to TypeSafe when a key is available and the other product gates pass.
 
@@ -100,7 +100,7 @@ Then two one-time steps, because Grok does not let a plugin do either of them fo
 /compact-adviser install
 ```
 
-That writes `~/.grok/hooks/compact-adviser.json`, because **Grok 1.0.34 lists a plugin's own `hooks/hooks.json` but never loads it into a session**. Hooks in your own Grok home are always trusted, so nothing else is needed; delete that file to remove them. From a shell it is `node "$(node -e 'const l=JSON.parse(require("child_process").execFileSync("grok",["plugin","list","--json"],{encoding:"utf8"})); const p=(Array.isArray(l)?l:[]).find(x=>x&&x.name==="compact-adviser"); if(!p||typeof p.path!=="string") throw new Error("compact-adviser is not installed"); process.stdout.write(p.path)')/bin/adviser.ts" install`. After `install`, `~/.grok/compact-adviser/adviser.sh` resolves the currently installed plugin the same way.
+That writes `${GROK_HOME:-~/.grok}/hooks/compact-adviser.json`, because **Grok 1.0.34 lists a plugin's own `hooks/hooks.json` but never loads it into a session**. Hooks in your own Grok home are always trusted, so nothing else is needed; delete that file to remove them. From a shell it is `node "$(node -e 'const l=JSON.parse(require("child_process").execFileSync("grok",["plugin","list","--json"],{encoding:"utf8"})); const p=(Array.isArray(l)?l:[]).find(x=>x&&x.name==="compact-adviser"); if(!p||typeof p.path!=="string") throw new Error("compact-adviser is not installed"); process.stdout.write(p.path)')/bin/adviser.ts" install`. After `install`, `${GROK_HOME:-~/.grok}/compact-adviser/adviser.sh` resolves the currently installed plugin the same way.
 
 Then paste the `[ui.status_line]` block `install` printed into the config.toml path it named and restart Grok. The status row is off by default and only your own config can turn it on - a plugin cannot, and neither can a repository. Grok has one status row, so this script paints the built-in segments (`cwd`, `model`, `context`) too. Minimal render mode has no status row at all.
 
@@ -168,8 +168,9 @@ hint can never be fed back to the model.
 
 | Command | Effect |
 | --- | --- |
-| `/compact-adviser` | Settings (mode, minimum, request log, TypeSafe API key) |
-| `/compact-adviser auto` / `hint` / `off` | Save that mode; auto asks for first-use confirmation (Pi and Claude Code only) |
+| `/compact-adviser` (Pi and Claude Code) | Settings (mode, minimum, request log, TypeSafe API key) |
+| `/compact-adviser auto` / `hint` / `off` (Pi and Claude Code) | Save that mode; auto asks for first-use confirmation |
+| `/compact-adviser mode hint` / `/compact-adviser mode off` (Grok) | Save hint-only mode, or disable the adviser |
 | `/compact-adviser status` | Mode, minimum, context, key source (`env` / `saved` / `.env` / `missing`), cooldown |
 | `/compact-adviser threshold 60000` | Save an absolute token minimum |
 | `/compact-adviser snooze` / `dismiss` | Suppress the next three exchanges, or clear the current hint |
@@ -187,4 +188,3 @@ Local judgment eval uses real session checkpoints to score when the adviser shou
 ![Use Jev to answer "should I /compact now?" — precision stays high while recall rises as context used goes from ≤10% to ≥90%](https://raw.githubusercontent.com/kunchenguid/compact-adviser/main/docs/eval-usage-floor-curve.png)
 
 The judgment-eval harness lives in [packages/pi-extension/eval/](https://github.com/kunchenguid/compact-adviser/blob/main/packages/pi-extension/eval/README.md). It is not a published dataset: point it at your own sessions and keep transcripts local.
-

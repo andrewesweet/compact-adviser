@@ -1,6 +1,6 @@
 ---
 description: Show or change compact-adviser settings (install, mode, threshold, status)
-argument-hint: "[install|status|mode hint|off|threshold <tokens|default>|log on|off|snooze|dismiss]"
+argument-hint: "[install|status|mode <hint|off>|threshold <tokens|default>|log <on|off>|snooze|dismiss]"
 allowed-tools: run_terminal_command
 ---
 
@@ -17,9 +17,8 @@ With no arguments the CLI prints its own usage.
 
 Rules for this command:
 
-- Run the CLI. Do not edit `~/.grok/compact-adviser/settings.json`, `~/.grok/config.toml`,
-  `~/.grok/hooks/compact-adviser.json`, or any other file yourself, and do not guess at a
-  setting the CLI did not report.
+- Run the CLI. Do not edit files under `${GROK_HOME:-~/.grok}` or any other file yourself,
+  and do not guess at a setting the CLI did not report.
 - Print what the CLI printed. It never prints a TypeSafe API key, only where the key in effect
   came from, so there is nothing to redact - and nothing to paraphrase either.
 - Never pass a TypeSafe API key to the CLI. There is no `key <value>` action through this

@@ -1,13 +1,14 @@
 #!/usr/bin/env node
-// Single source of truth for all package READMEs: the root README.md, with its
+// Single source of truth for every package README: the root README.md, with its
 // relative links/images rewritten to absolute GitHub URLs so they still resolve when
-// the same text is read from a package directory (npm or marketplace/GitHub), which
-// does not sit next to the files the root README points at (docs/, SECURITY.md, ...).
+// the same text is read from a package directory (npm or a plugin marketplace), which
+// does not sit next to the files the root README points at (docs/, SECURITY.md, the
+// sibling packages, ...).
 //
 // Used by:
 //   - packages/pi-extension's `prepack` script, so every `npm pack`/`npm publish`
 //     (CI trusted-publish or manual) ships a freshly generated README in the tarball.
-//   - the marketplace packages' `check-readme` scripts and pi-extension's
+//   - the plugin packages' `check-readme` scripts and pi-extension's
 //     `test/readme.test.ts`, which fail the build if the committed/packed README has
 //     drifted from what this generator produces.
 import { readFileSync, writeFileSync } from "node:fs";

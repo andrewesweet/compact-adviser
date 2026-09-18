@@ -1,6 +1,6 @@
 // The hint surface. Grok gives a Stop hook no display channel at all — "a hook that ran and
 // allowed leaves no trace" — so the hint is painted by a `[ui.status_line] type = "command"`
-// script instead, which the person opts into in their own `~/.grok/config.toml`.
+// script instead, which the person opts into in their own Grok-home `config.toml`.
 //
 // There is exactly one status row, so this script has to stand in for the built-in segments
 // it displaces. It paints them itself, in Grok's own order and separator, and adds the hint
