@@ -27,8 +27,6 @@ export interface Settings {
   logRequests: boolean;
   /** Saved TypeSafe key; a non-empty `TYPESAFE_API_KEY` in the environment still wins. */
   typesafeApiKey: string;
-  /** Built-in segments the hint row keeps, since it replaces the user's only status row. */
-  statusLineItems: StatusLineItem[];
 }
 
 export const DEFAULT_SETTINGS: Readonly<Settings> = Object.freeze({
@@ -37,7 +35,6 @@ export const DEFAULT_SETTINGS: Readonly<Settings> = Object.freeze({
   minContextTokens: DEFAULT_MINIMUM,
   logRequests: false,
   typesafeApiKey: "",
-  statusLineItems: [...DEFAULT_STATUS_LINE_ITEMS],
 });
 
 export class SettingsError extends Error {
@@ -82,32 +79,12 @@ export function parseSavedApiKey(text: string): string {
   return value;
 }
 
-export function parseStatusLineItems(text: string): StatusLineItem[] {
-  const parts = text
-    .split(/[\s,]+/)
-    .map((part) => part.trim())
-    .filter(Boolean);
-  if (!parts.length)
-    throw new SettingsError(`Name at least one of: ${STATUS_LINE_ITEMS.join(", ")}.`);
-  const items: StatusLineItem[] = [];
-  for (const part of parts) {
-    if (!STATUS_LINE_ITEMS.includes(part as StatusLineItem)) {
-      throw new SettingsError(
-        `Unknown status-line item "${part}". Choose from: ${STATUS_LINE_ITEMS.join(", ")}.`,
-      );
-    }
-    if (!items.includes(part as StatusLineItem)) items.push(part as StatusLineItem);
-  }
-  return items;
-}
-
 /**
  * A stored record is either usable or reported. A field of the wrong kind is never silently
  * replaced: the hook then does nothing at all, which is the contract's "leave context alone".
  */
 export function parseSettings(value: unknown): Settings {
-  if (value === undefined)
-    return { ...DEFAULT_SETTINGS, statusLineItems: [...DEFAULT_STATUS_LINE_ITEMS] };
+  if (value === undefined) return { ...DEFAULT_SETTINGS };
   const s = value as Partial<Settings> | null;
   if (!s || typeof s !== "object" || Array.isArray(s) || s.version !== 1) {
     throw new SettingsError("Cannot read the compact-adviser settings file; no action is taken.");
@@ -134,22 +111,12 @@ export function parseSettings(value: unknown): Settings {
       "Cannot read the compact-adviser TypeSafe key setting; no action is taken.",
     );
   }
-  const rawItems = s.statusLineItems ?? DEFAULT_STATUS_LINE_ITEMS;
-  if (
-    !Array.isArray(rawItems) ||
-    !rawItems.every((item) => STATUS_LINE_ITEMS.includes(item as StatusLineItem))
-  ) {
-    throw new SettingsError(
-      "Cannot read the compact-adviser status-line items; no action is taken.",
-    );
-  }
   return {
     version: 1,
     mode: mode as Mode,
     minContextTokens: minimum,
     logRequests,
     typesafeApiKey: key,
-    statusLineItems: [...(rawItems as StatusLineItem[])],
   };
 }
 

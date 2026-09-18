@@ -10,6 +10,7 @@ import { join } from "node:path";
 import type { TestContext } from "node:test";
 
 export const ENTRY = join(import.meta.dirname, "..", "bin", "adviser.ts");
+export const PACKAGE_ROOT = join(import.meta.dirname, "..");
 
 export interface Lab {
   home: string;
@@ -96,6 +97,8 @@ export interface Fixture {
   verdict: { finished: number; handsOn: number };
   /** When set, every request answers with this status instead of a judgment. */
   status?: number;
+  /** When true, the body is larger than MAX_RESPONSE_BYTES. */
+  oversize: boolean;
 }
 
 export function typesafeFixture(t: TestContext): Promise<Fixture> {
@@ -105,6 +108,7 @@ export function typesafeFixture(t: TestContext): Promise<Fixture> {
     bodies,
     close: () => undefined,
     verdict: { finished: 0.97, handsOn: 0.96 },
+    oversize: false,
   };
   const choice = (name: string, p: number, others: [string, string]) => ({
     type: "choice",
@@ -122,6 +126,11 @@ export function typesafeFixture(t: TestContext): Promise<Fixture> {
       if (state.status !== undefined) {
         response.writeHead(state.status, { "content-type": "application/json" });
         response.end("{}");
+        return;
+      }
+      if (state.oversize) {
+        response.writeHead(200, { "content-type": "application/json" });
+        response.end("x".repeat(32768 + 1));
         return;
       }
       response.writeHead(200, { "content-type": "application/json" });
@@ -152,6 +161,55 @@ export interface RunResult {
   code: number | null;
   stdout: string;
   stderr: string;
+}
+
+/** Grok's install registry, pointing `compact-adviser` at this package. */
+export function writePluginRegistry(lab: Lab, pluginRoot = PACKAGE_ROOT): void {
+  mkdirSync(join(lab.home, "installed-plugins"), { recursive: true });
+  writeFileSync(
+    join(lab.home, "installed-plugins", "registry.json"),
+    `${JSON.stringify({
+      version: 1,
+      repos: {
+        "test-compact-adviser": {
+          kind: { type: "Local", source_path: pluginRoot },
+          path: pluginRoot,
+          plugins: { "compact-adviser": { version: "0.1.0" } },
+        },
+      },
+    })}\n`,
+  );
+}
+
+export function runLauncher(
+  lab: Lab,
+  args: readonly string[] = [],
+  options: { stdin?: string; env?: Record<string, string | undefined> } = {},
+): Promise<RunResult> {
+  const { stdin = "", env = {} } = options;
+  const child = spawn(join(lab.dataDir, "adviser.sh"), [...args], {
+    cwd: lab.cwd,
+    env: {
+      ...process.env,
+      TYPESAFE_API_KEY: undefined,
+      GROK_HOME: lab.home,
+      GROK_SESSION_ID: lab.sessionId,
+      NO_COLOR: "1",
+      ...env,
+    } as NodeJS.ProcessEnv,
+  });
+  child.stdin.end(stdin);
+  let stdout = "";
+  let stderr = "";
+  child.stdout.on("data", (chunk) => {
+    stdout += chunk;
+  });
+  child.stderr.on("data", (chunk) => {
+    stderr += chunk;
+  });
+  return new Promise((resolve) => {
+    child.on("close", (code) => resolve({ code, stdout, stderr }));
+  });
 }
 
 export function runCli(

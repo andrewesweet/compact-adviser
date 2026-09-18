@@ -5,13 +5,7 @@
 
 import assert from "node:assert/strict";
 import test from "node:test";
-import {
-  DEFAULT_SETTINGS,
-  parseMode,
-  parseSettings,
-  parseStatusLineItems,
-  SettingsError,
-} from "../lib/config.ts";
+import { DEFAULT_SETTINGS, parseMode, parseSettings, SettingsError } from "../lib/config.ts";
 import { HINT, itemsLine, parsePayload, statusLine } from "../lib/statusline.ts";
 import { type Verdict, verdictApplies } from "../lib/store.ts";
 import { parseChatHistory, userText } from "../lib/transcript.ts";
@@ -204,7 +198,5 @@ test("settings defaults fill in, and a field of the wrong kind is reported", () 
   assert.throws(() => parseSettings({ version: 2 }), SettingsError);
   assert.throws(() => parseSettings({ version: 1, minContextTokens: -1 }), SettingsError);
   assert.throws(() => parseSettings({ version: 1, logRequests: "yes" }), SettingsError);
-  assert.throws(() => parseSettings({ version: 1, statusLineItems: ["weather"] }), SettingsError);
-  assert.deepEqual(parseStatusLineItems("cwd, model cwd"), ["cwd", "model"]);
-  assert.throws(() => parseStatusLineItems("turn-timer"), /Unknown status-line item/);
+  assert.deepEqual(parseSettings({ version: 1, statusLineItems: ["weather"] }), DEFAULT_SETTINGS);
 });

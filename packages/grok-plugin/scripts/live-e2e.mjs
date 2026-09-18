@@ -342,10 +342,6 @@ try {
     dataDir,
   );
   check(
-    readFileSync(join(dataDir, "status-line.sh"), "utf8").includes("bin/adviser.ts"),
-    "the launcher points at an installed copy of this package",
-  );
-  check(
     jevRequests.length === 1,
     `the Stop gate asked TypeSafe once (asked ${jevRequests.length})`,
   );

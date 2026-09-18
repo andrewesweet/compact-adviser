@@ -10,12 +10,15 @@ import test from "node:test";
 import { HINT } from "../lib/statusline.ts";
 import {
   lab,
+  PACKAGE_ROOT,
   runCli,
+  runLauncher,
   statusPayload,
   stopPayload,
   typesafeFixture,
   workedHistory,
   writeHistory,
+  writePluginRegistry,
   writeSignals,
 } from "./support.ts";
 
@@ -262,29 +265,37 @@ test("request logging writes the request and the outcome, and never the key", as
   assert.ok(!readFileSync(path, "utf8").includes("tsk-test-key"));
 });
 
-test("session start writes the launchers the status line and the slash command point at", async (t) => {
+test("session start writes launchers that resolve the currently installed plugin", async (t) => {
   const l = lab(t);
-  const entry = join(import.meta.dirname, "..", "bin", "adviser.ts");
+  writePluginRegistry(l);
   await runCli(["hook", "session-start"], {
     lab: l,
     stdin: JSON.stringify({ hook_event_name: "SessionStart", sessionId: l.sessionId }),
   });
   for (const name of ["adviser.sh", "status-line.sh"]) {
-    const path = join(l.dataDir, name);
-    assert.ok(existsSync(path), `${name} written`);
-    const body = readFileSync(path, "utf8");
-    assert.match(body, /^#!\/bin\/sh/);
-    assert.ok(body.includes(entry), `${name} points at this package`);
+    assert.ok(existsSync(join(l.dataDir, name)), `${name} written`);
   }
-  assert.match((await runCli(["doctor"], { lab: l })).stdout, /ok {3}status-line launcher/);
+  const help = await runLauncher(l);
+  assert.equal(help.code, 0);
+  assert.match(help.stdout, /compact-adviser \(Grok\)/);
+
+  const missing = lab(t);
+  await runCli(["hook", "session-start"], {
+    lab: missing,
+    stdin: JSON.stringify({ hook_event_name: "SessionStart", sessionId: missing.sessionId }),
+  });
+  const failed = await runLauncher(missing);
+  assert.notEqual(failed.code, 0);
+  assert.match(failed.stderr, /could not find the installed plugin/);
+
+  const viaRoot = await runLauncher(missing, [], { env: { GROK_PLUGIN_ROOT: PACKAGE_ROOT } });
+  assert.equal(viaRoot.code, 0);
+  assert.match(viaRoot.stdout, /compact-adviser \(Grok\)/);
 });
 
-test("install registers the same handlers the plugin ships, with a path Grok can run", async (t) => {
+test("install registers the same handlers the plugin ships, through the stable launcher", async (t) => {
   const l = lab(t);
-  const entry = join(import.meta.dirname, "..", "bin", "adviser.ts");
-  const before = await runCli(["doctor"], { lab: l });
-  assert.match(before.stdout, /FAIL hooks registered/);
-
+  writePluginRegistry(l);
   const installed = await runCli(["install"], { lab: l });
   assert.match(installed.stdout, /Registered the compact-adviser hooks/);
   // The person still has to opt the status row in themselves; say so at install time.
@@ -295,12 +306,15 @@ test("install registers the same handlers the plugin ships, with a path Grok can
     readFileSync(join(import.meta.dirname, "..", "hooks", "hooks.json"), "utf8"),
   );
   assert.deepEqual(Object.keys(written.hooks), Object.keys(shipped.hooks));
+  const launcher = join(l.dataDir, "adviser.sh");
   for (const [event, groups] of Object.entries(written.hooks) as [string, any][]) {
     const command = groups[0].hooks[0].command;
-    assert.ok(command.includes(entry), `${event} runs this package`);
+    assert.ok(command.includes(launcher), `${event} runs the stable launcher`);
     assert.ok(!command.includes("GROK_PLUGIN_ROOT"), `${event} needs no plugin environment`);
   }
-  assert.match((await runCli(["doctor"], { lab: l })).stdout, /ok {3}hooks registered/);
+  const help = await runLauncher(l);
+  assert.equal(help.code, 0);
+  assert.match(help.stdout, /compact-adviser \(Grok\)/);
 });
 
 test("one turn is judged once even when the Stop gate is registered twice", async (t) => {
@@ -316,6 +330,35 @@ test("one turn is judged once even when the Stop gate is registered twice", asyn
   await runCli(["hook", "stop"], { lab: l, stdin: stopPayload(l), env: keyed(fixture) });
   assert.ok(fixture.bodies.length <= 2, `asked ${fixture.bodies.length} times`);
   assert.match((await runCli(["status"], { lab: l })).stdout, /1 completed exchange/);
+});
+
+test("a malformed transcript line is not judged", async (t) => {
+  const { l, fixture } = await judgeTurn(t);
+  const path = join(l.sessionDir, "chat_history.jsonl");
+  writeFileSync(path, `${readFileSync(path, "utf8")}not json at all\n`);
+  await runCli(["hook", "stop"], { lab: l, stdin: stopPayload(l), env: keyed(fixture) });
+  assert.equal(fixture.bodies.length, 0);
+  const row = await runCli(["status-line"], { lab: l, stdin: statusPayload(l) });
+  assert.ok(!row.stdout.includes(HINT));
+});
+
+test("an oversized TypeSafe response is refused without a hint", async (t) => {
+  const { l, fixture } = await judgeTurn(t);
+  fixture.oversize = true;
+  await runCli(["hook", "stop"], { lab: l, stdin: stopPayload(l), env: keyed(fixture) });
+  assert.equal(fixture.bodies.length, 1);
+  const row = await runCli(["status-line"], { lab: l, stdin: statusPayload(l) });
+  assert.ok(!row.stdout.includes(HINT));
+});
+
+test("setup, doctor, items, and hint are not commands", async (t) => {
+  const l = lab(t);
+  for (const command of ["setup", "doctor", "items", "hint"]) {
+    const result = await runCli([command], { lab: l });
+    assert.equal(result.code, 1, command);
+    assert.match(result.stderr, /Unknown command/);
+    assert.ok(!result.stdout.includes(HINT));
+  }
 });
 
 test("an unreadable settings file stops the product instead of guessing", async (t) => {

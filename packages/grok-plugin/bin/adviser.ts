@@ -36,20 +36,18 @@ import {
 import { join } from "node:path";
 import {
   DEFAULT_MINIMUM,
-  DEFAULT_SETTINGS,
+  DEFAULT_STATUS_LINE_ITEMS,
   formatTokens,
   parseMinimum,
   parseMode,
   parseSavedApiKey,
-  parseStatusLineItems,
   readSettings,
   type Settings,
   SettingsError,
-  STATUS_LINE_ITEMS,
   writeSettings,
 } from "../lib/config.ts";
 import { formatKeyStatus, parseDotenvKey, resolveTypesafeApiKey } from "../lib/env.ts";
-import { floorFor, judge, qualifies, requestBody, score } from "../lib/judge.ts";
+import { floorFor, judge, MAX_RESPONSE_BYTES, qualifies, requestBody, score } from "../lib/judge.ts";
 import {
   errorLogLine,
   loggedJudgeErrorKind,
@@ -68,7 +66,7 @@ import {
 } from "../lib/paths.ts";
 import { snapshot } from "../lib/snapshot.ts";
 import { backoff, completeExchange, cooldownReason, SESSION_RETENTION_MS } from "../lib/state.ts";
-import { HINT, parsePayload, statusLine } from "../lib/statusline.ts";
+import { parsePayload, statusLine } from "../lib/statusline.ts";
 import {
   clearDiagnostic,
   clearVerdict,
@@ -93,14 +91,11 @@ const USAGE = `compact-adviser (Grok)
   status                     what the adviser would do right now
   mode hint|off              hint shows advice; off disables it (Grok's own auto-compact is unaffected)
   threshold <tokens|default> minimum context tokens before a checkpoint is judged
-  key <value>|key clear      save or clear the TypeSafe API key (TYPESAFE_API_KEY still wins)
+  key <value>|key clear      save or clear the TypeSafe API key from a shell (TYPESAFE_API_KEY still wins)
   log on|off                 TypeSafe request logging, off by default
-  items <list>               built-in status-line segments the hint row keeps (${STATUS_LINE_ITEMS.join(", ")})
   snooze                     no advice for three more completed exchanges in this session
   dismiss                    take the current hint off the status row
-  install                    register the hooks in your Grok home, then print the status-line block
-  setup                      the [ui.status_line] block to paste into ~/.grok/config.toml
-  doctor                     check that both halves of the plugin can run`;
+  install                    register the hooks in your Grok home, then print the status-line block`;
 
 // --- small helpers ------------------------------------------------------------------
 
@@ -155,6 +150,35 @@ function resolveKey(settings: Settings, cwd: string) {
 function testEndpoint(): string | undefined {
   const value = process.env.COMPACT_ADVISER_TEST_ENDPOINT;
   return value !== undefined && LOOPBACK_ENDPOINT.test(value) ? value : undefined;
+}
+
+async function readBoundedText(response: Response): Promise<string> {
+  const reader = response.body?.getReader();
+  if (!reader) return "";
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  try {
+    while (true) {
+      const next = await reader.read();
+      if (next.done) break;
+      size += next.value.byteLength;
+      if (size > MAX_RESPONSE_BYTES) throw new Error("response");
+      chunks.push(next.value);
+    }
+  } finally {
+    try {
+      await reader.cancel();
+    } catch {
+      // Already closed.
+    }
+  }
+  const all = new Uint8Array(size);
+  let offset = 0;
+  for (const chunk of chunks) {
+    all.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return new TextDecoder().decode(all);
 }
 
 function appendLog(sessionId: string, line: string): void {
@@ -253,6 +277,7 @@ async function runStop(payload: HookPayload): Promise<void> {
   if (!activeKey) return;
 
   const transcript = readTranscript(dir);
+  if (transcript.unreadableLines !== 0) return;
   if (!transcript.messages.length) return;
   const view = snapshot(transcript.messages, [activeKey], transcript.hasImages);
   if (view.conversationTokens <= MINIMUM_CONVERSATION_TOKENS) return;
@@ -281,7 +306,11 @@ async function runStop(payload: HookPayload): Promise<void> {
     judgment = await judge(view.state, activeKey, {
       fetch: async (url, init) => {
         const response = await fetch(url, init);
-        return { status: response.status, ok: response.ok, text: await response.text() };
+        return {
+          status: response.status,
+          ok: response.ok,
+          text: await readBoundedText(response),
+        };
       },
       sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
       ...(endpoint ? { endpoint } : {}),
@@ -344,9 +373,8 @@ function runCompact(payload: HookPayload): void {
 }
 
 /**
- * Session start does the two pieces of housekeeping only a plugin hook can: it refreshes the
- * launchers at the fixed path the person's `config.toml` and slash command point at (the
- * status-line script is not a plugin hook, so it is never told where the plugin lives), and it
+ * Session start refreshes the launchers at the fixed path the person's `config.toml` points at
+ * (the status-line script is not a plugin hook, so it is never told where the plugin lives) and
  * prunes records of sessions that ended long ago.
  */
 function runSessionStart(): void {
@@ -354,24 +382,85 @@ function runSessionStart(): void {
   pruneStale();
 }
 
-/** This file, wherever it was installed; both launchers and the hook file point back at it. */
-const ENTRY = join(import.meta.dirname, "adviser.ts");
+const RESOLVE_INSTALLED_PLUGIN = [
+  'const { existsSync, readFileSync } = require("node:fs");',
+  'const { join } = require("node:path");',
+  'const { execFileSync } = require("node:child_process");',
+  "const home = process.env.COMPACT_ADVISER_GROK_HOME;",
+  "function entry(root) {",
+  '  if (typeof root !== "string" || !root) return "";',
+  '  const path = join(root, "bin", "adviser.ts");',
+  '  return existsSync(path) ? path : "";',
+  "}",
+  "try {",
+  '  const parsed = JSON.parse(readFileSync(join(home, "installed-plugins", "registry.json"), "utf8"));',
+  "  for (const repo of Object.values(parsed.repos || {})) {",
+  '    if (repo && repo.plugins && repo.plugins["compact-adviser"]) {',
+  "      const found = entry(repo.path);",
+  "      if (found) {",
+  "        process.stdout.write(found);",
+  "        process.exit(0);",
+  "      }",
+  "    }",
+  "  }",
+  "} catch {}",
+  "try {",
+  "  const list = JSON.parse(",
+  '    execFileSync("grok", ["plugin", "list", "--json"], {',
+  '      encoding: "utf8",',
+  "      env: Object.assign({}, process.env, { GROK_HOME: home }),",
+  "      timeout: 5000,",
+  '      stdio: ["ignore", "pipe", "ignore"],',
+  "    }),",
+  "  );",
+  '  const hit = (Array.isArray(list) ? list : []).find((p) => p && p.name === "compact-adviser");',
+  "  const found = entry(hit && hit.path);",
+  "  if (found) process.stdout.write(found);",
+  "} catch {}",
+].join("\n");
 
-export function launcherBody(target: string, args: string): string {
-  return `#!/bin/sh
-# Written by compact-adviser. Do not edit: \`compact-adviser install\` and every session start
-# rewrite it. It exists because the status-line script and the slash command need one fixed
-# path, while the package's own directory moves with every install.
-exec node ${JSON.stringify(target)}${args ? ` ${args}` : ""} "$@"
-`;
+export function launcherBody(): string {
+  return [
+    "#!/bin/sh",
+    "# Written by compact-adviser. Do not edit: `compact-adviser install` and every session start",
+    "# rewrite it. It exists because the status-line script needs one fixed path, while the",
+    "# package's own directory moves with every install. This script finds the current plugin.",
+    'dir=$(dirname "$0")',
+    'entry=""',
+    'if [ -n "$GROK_PLUGIN_ROOT" ] && [ -f "$GROK_PLUGIN_ROOT/bin/adviser.ts" ]; then',
+    '  entry="$GROK_PLUGIN_ROOT/bin/adviser.ts"',
+    "fi",
+    'if [ -z "$entry" ]; then',
+    '  home="${GROK_HOME:-$HOME/.grok}"',
+    '  case "$home" in',
+    '    */) home="${home%/}" ;;',
+    "  esac",
+    '  entry=$(COMPACT_ADVISER_GROK_HOME="$home" node "$dir/resolve.cjs" </dev/null)',
+    "fi",
+    'if [ -z "$entry" ] || [ ! -f "$entry" ]; then',
+    '  echo "compact-adviser: could not find the installed plugin" >&2',
+    "  exit 1",
+    "fi",
+    'exec node "$entry" "$@"',
+    "",
+  ].join("\n");
+}
+
+export function statusLineLauncherBody(): string {
+  return [
+    "#!/bin/sh",
+    'exec "$(dirname "$0")/adviser.sh" status-line "$@"',
+    "",
+  ].join("\n");
 }
 
 function writeLaunchers(): void {
   const dir = dataDir(env());
   try {
     mkdirSync(dir, { recursive: true });
-    writeFileSync(join(dir, "adviser.sh"), launcherBody(ENTRY, ""), { mode: 0o700 });
-    writeFileSync(join(dir, "status-line.sh"), launcherBody(ENTRY, "status-line"), { mode: 0o700 });
+    writeFileSync(join(dir, "resolve.cjs"), `${RESOLVE_INSTALLED_PLUGIN}\n`, { mode: 0o600 });
+    writeFileSync(join(dir, "adviser.sh"), launcherBody(), { mode: 0o700 });
+    writeFileSync(join(dir, "status-line.sh"), statusLineLauncherBody(), { mode: 0o700 });
   } catch {
     // Without the launchers the hint cannot be painted, but the turn is not ours to fail.
   }
@@ -382,20 +471,39 @@ export function hookFilePath(env: Env = process.env): string {
 }
 
 /**
- * The hook file, with this package's own path baked in. It is the plugin's own hooks.json
- * with `${GROK_PLUGIN_ROOT}/bin/adviser.ts` resolved, so the two copies stay one definition.
+ * The hook file, pointing at the stable launcher rather than this package copy. The plugin's
+ * own hooks.json still uses GROK_PLUGIN_ROOT; this user-hook copy cannot, because Grok 1.0.34
+ * never loads plugin hooks.
  */
 export function hookFileBody(): string {
-  const source = readFileSync(join(import.meta.dirname, "..", "hooks", "hooks.json"), "utf8");
+  const source = JSON.parse(
+    readFileSync(join(import.meta.dirname, "..", "hooks", "hooks.json"), "utf8"),
+  ) as {
+    hooks: Record<
+      string,
+      Array<{ hooks: Array<{ type: string; command: string; timeout: number }> }>
+    >;
+  };
+  const launcher = join(dataDir(env()), "adviser.sh");
   // biome-ignore lint/suspicious/noTemplateCurlyInString: this is Grok's own expansion syntax
-  return source.replaceAll("${GROK_PLUGIN_ROOT}/bin/adviser.ts", ENTRY);
+  const prefix = 'node "${GROK_PLUGIN_ROOT}/bin/adviser.ts"';
+  for (const groups of Object.values(source.hooks)) {
+    for (const group of groups) {
+      for (const handler of group.hooks) {
+        if (handler.command.startsWith(prefix)) {
+          handler.command = `${JSON.stringify(launcher)}${handler.command.slice(prefix.length)}`;
+        }
+      }
+    }
+  }
+  return `${JSON.stringify(source, null, 2)}\n`;
 }
 
 function install(): string {
+  writeLaunchers();
   const path = hookFilePath(env());
   mkdirSync(join(grokHome(env()), "hooks"), { recursive: true });
   writeFileSync(path, hookFileBody(), { mode: 0o600 });
-  writeLaunchers();
   return [
     `Registered the compact-adviser hooks at ${path}.`,
     "Hooks in your own Grok home are always trusted; restart Grok, or press r in the /hooks tab,",
@@ -430,12 +538,9 @@ function pruneStale(): void {
 
 function runStatusLine(): void {
   const payload = parsePayload(readStdin());
-  let items = [...DEFAULT_SETTINGS.statusLineItems];
   let enabled = true;
   try {
-    const settings = settingsOrThrow();
-    items = settings.statusLineItems;
-    enabled = settings.mode !== "off";
+    enabled = settingsOrThrow().mode !== "off";
   } catch {
     // Unreadable settings paint the built-in segments alone rather than an error row.
     enabled = false;
@@ -448,7 +553,9 @@ function runStatusLine(): void {
     hint =
       verdict !== undefined && verdictApplies(verdict, Date.now(), payload.prompt_id, usage.tokens);
   }
-  process.stdout.write(statusLine(items, payload, hint, process.env.NO_COLOR === undefined));
+  process.stdout.write(
+    statusLine(DEFAULT_STATUS_LINE_ITEMS, payload, hint, process.env.NO_COLOR === undefined),
+  );
 }
 
 // --- the person-facing commands -----------------------------------------------------
@@ -462,7 +569,6 @@ function statusText(): string {
     `Minimum context: ${formatTokens(settings.minContextTokens)} tokens.`,
     `${formatKeyStatus(key.source)}.`,
     `Request log: ${settings.logRequests ? requestLogPath(dataDir(env()), "<session-id>") : "off"}.`,
-    `Status-line items: ${settings.statusLineItems.join(", ")}.`,
     `Settings file: ${settingsPath(env())}.`,
     `Grok home: ${home}.`,
   ];
@@ -501,53 +607,8 @@ command = ${JSON.stringify(join(dataDir(env()), "status-line.sh"))}
 
 The status row is off by default and only your own config can turn it on: installing a plugin
 cannot set it, and a repository cannot either. Grok has one status row, so this script paints
-the built-in segments too (${DEFAULT_SETTINGS.statusLineItems.join(", ")} by default; change
-them with \`items\`). There is no status row at all in minimal render mode.`;
-}
-
-function doctorText(): string {
-  const lines: string[] = [];
-  const [major, minor] = process.versions.node.split(".").map(Number);
-  const nodeOk = (major ?? 0) > 22 || ((major ?? 0) === 22 && (minor ?? 0) >= 18);
-  lines.push(
-    `${nodeOk ? "ok  " : "FAIL"} node ${process.versions.node} (needs 22.18 or newer for type stripping)`,
-  );
-  const hookFile = hookFilePath(env());
-  let hooksOk = false;
-  try {
-    hooksOk = readFileSync(hookFile, "utf8").includes(ENTRY);
-  } catch {
-    hooksOk = false;
-  }
-  lines.push(
-    `${hooksOk ? "ok  " : "FAIL"} hooks registered at ${hookFile}${
-      hooksOk ? "" : " (run `install`; Grok does not load a plugin's own hooks)"
-    }`,
-  );
-  const launcher = join(dataDir(env()), "status-line.sh");
-  let launcherOk = false;
-  try {
-    statSync(launcher);
-    launcherOk = true;
-  } catch {
-    launcherOk = false;
-  }
-  lines.push(
-    `${launcherOk ? "ok  " : "FAIL"} status-line launcher ${launcher}${
-      launcherOk ? "" : " (start a Grok session with the plugin enabled to write it)"
-    }`,
-  );
-  try {
-    const settings = settingsOrThrow();
-    const key = resolveKey(settings, process.cwd());
-    lines.push(`ok   settings readable; mode ${settings.mode}; ${formatKeyStatus(key.source)}`);
-    if (key.source === "missing") {
-      lines.push("FAIL no TypeSafe key: save one with `key <value>` or set TYPESAFE_API_KEY");
-    }
-  } catch (error) {
-    lines.push(`FAIL ${error instanceof Error ? error.message : "settings unreadable"}`);
-  }
-  return lines.join("\n");
+the built-in segments too (${DEFAULT_STATUS_LINE_ITEMS.join(", ")}). There is no status row at
+all in minimal render mode.`;
 }
 
 function snooze(): string {
@@ -595,20 +656,12 @@ function runCommand(argv: readonly string[]): string {
       updateSettings({ logRequests: value === "on" });
       return `TypeSafe request logging ${value}.`;
     }
-    case "items":
-      return `Status-line items saved: ${updateSettings({ statusLineItems: parseStatusLineItems(value) }).statusLineItems.join(", ")}.`;
     case "snooze":
       return snooze();
     case "dismiss":
       return dismiss();
     case "install":
       return install();
-    case "setup":
-      return setupText();
-    case "doctor":
-      return doctorText();
-    case "hint":
-      return HINT;
     case "":
     case "help":
     case "--help":
