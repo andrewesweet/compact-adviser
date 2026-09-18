@@ -15,10 +15,8 @@ export type Mode = "hint" | "off";
 export const MODES: readonly Mode[] = ["hint", "off"];
 export const DEFAULT_MINIMUM = 40000;
 export const MAX_SAVED_API_KEY_LENGTH = 1024;
-/** The built-in status-line segments this package can paint in place of Grok's own row. */
-export const STATUS_LINE_ITEMS = ["cwd", "model", "context", "cost", "session-name"] as const;
-export type StatusLineItem = (typeof STATUS_LINE_ITEMS)[number];
-export const DEFAULT_STATUS_LINE_ITEMS: readonly StatusLineItem[] = ["cwd", "model", "context"];
+/** The built-in status-line segments this package paints in place of Grok's own row. */
+export const STATUS_LINE_ITEMS = ["cwd", "model", "context"] as const;
 
 export interface Settings {
   version: 1;

@@ -36,7 +36,7 @@ import {
 import { join } from "node:path";
 import {
   DEFAULT_MINIMUM,
-  DEFAULT_STATUS_LINE_ITEMS,
+  STATUS_LINE_ITEMS,
   formatTokens,
   parseMinimum,
   parseMode,
@@ -546,7 +546,7 @@ function runStatusLine(): void {
       verdict !== undefined && verdictApplies(verdict, Date.now(), payload.prompt_id, usage.tokens);
   }
   process.stdout.write(
-    statusLine(DEFAULT_STATUS_LINE_ITEMS, payload, hint, process.env.NO_COLOR === undefined),
+    statusLine(payload, hint, process.env.NO_COLOR === undefined),
   );
 }
 
@@ -599,7 +599,7 @@ command = ${JSON.stringify(shellQuote(join(dataDir(env()), "status-line.sh")))}
 
 The status row is off by default and only your own config can turn it on: installing a plugin
 cannot set it, and a repository cannot either. Grok has one status row, so this script paints
-the built-in segments too (${DEFAULT_STATUS_LINE_ITEMS.join(", ")}). There is no status row at
+the built-in segments too (${STATUS_LINE_ITEMS.join(", ")}). There is no status row at
 all in minimal render mode.`;
 }
 

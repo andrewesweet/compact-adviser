@@ -130,28 +130,25 @@ test("the status row keeps the built-in segments it displaces, and omits what Gr
       workspace: { current_dir: "/repo/project" },
       model: { display_name: "Grok 4.6" },
       context_window: { used_percentage: 61 },
-      cost: { total_cost_usd: 0.004 },
     }),
   );
-  assert.equal(itemsLine(["cwd", "model", "context"], payload), "project │ Grok 4.6 │ 61% ctx");
-  // A cost under half a cent is hidden, as Grok's own row hides it.
-  assert.equal(itemsLine(["cost"], payload), "");
-  assert.equal(itemsLine(["cwd", "session-name"], payload), "project");
-  assert.equal(itemsLine([], payload), "");
+  assert.equal(itemsLine(payload), "project │ Grok 4.6 │ 61% ctx");
+  assert.equal(itemsLine(parsePayload(JSON.stringify({ workspace: { current_dir: "/repo/project" } }))), "project");
+  assert.equal(itemsLine({}), "");
 });
 
 test("the hint is its own line, and the row never disappears when there is no hint", () => {
   const payload = parsePayload(JSON.stringify({ workspace: { current_dir: "/repo/project" } }));
-  assert.equal(statusLine(["cwd"], payload, false, false), "project\n");
-  assert.equal(statusLine(["cwd"], payload, true, false), `project\n${HINT}\n`);
+  assert.equal(statusLine(payload, false, false), "project\n");
+  assert.equal(statusLine(payload, true, false), `project\n${HINT}\n`);
   // A script that prints nothing takes the row away; an empty items line still keeps it.
-  assert.equal(statusLine(["model"], payload, false, false), "\n");
+  assert.equal(statusLine({}, false, false), "\n");
 });
 
 test("unusable status-line input paints the built-ins rather than an error", () => {
   assert.deepEqual(parsePayload("not json"), {});
   assert.deepEqual(parsePayload("[1,2]"), {});
-  assert.equal(statusLine(["cwd", "model"], parsePayload("not json"), false, false), "\n");
+  assert.equal(statusLine(parsePayload("not json"), false, false), "\n");
 });
 
 test("a verdict expires with the turn, the window, and the clock", () => {

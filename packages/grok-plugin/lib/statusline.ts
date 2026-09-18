@@ -7,8 +7,6 @@
 // as a second line only while a verdict applies. The hint never reaches the model: the status
 // row is drawn for the person, and nothing here writes to the conversation.
 
-import type { StatusLineItem } from "./config.ts";
-
 export const HINT =
   "Compact adviser: work appears completed or recorded. Run /compact to save tokens.";
 
@@ -22,11 +20,9 @@ export const MAX_LINE = 900;
 export interface StatusPayload {
   cwd?: string;
   session_id?: string;
-  session_name?: string;
   prompt_id?: string;
   model?: { id?: string; display_name?: string };
   workspace?: { current_dir?: string };
-  cost?: { total_cost_usd?: number };
   context_window?: {
     context_tokens?: number;
     context_window_size?: number;
@@ -56,41 +52,15 @@ function elide(text: string, limit: number): string {
   return text.length <= limit ? text : `${text.slice(0, Math.max(0, limit - 1))}…`;
 }
 
-/** One built-in segment, or undefined when Grok did not send what it needs. */
-function segment(item: StatusLineItem, payload: StatusPayload): string | undefined {
-  switch (item) {
-    case "cwd": {
-      const dir = payload.workspace?.current_dir ?? payload.cwd;
-      return dir ? elide(basename(dir), 40) : undefined;
-    }
-    case "model": {
-      const name = payload.model?.display_name ?? payload.model?.id;
-      return name ? elide(name, 30) : undefined;
-    }
-    case "context": {
-      const percent = payload.context_window?.used_percentage;
-      return typeof percent === "number" && Number.isFinite(percent)
-        ? `${Math.round(percent)}% ctx`
-        : undefined;
-    }
-    case "cost": {
-      const cost = payload.cost?.total_cost_usd;
-      return typeof cost === "number" && Number.isFinite(cost) && cost >= 0.005
-        ? `$${cost.toFixed(2)}`
-        : undefined;
-    }
-    case "session-name":
-      return payload.session_name ? elide(payload.session_name, 40) : undefined;
-    default:
-      return undefined;
-  }
-}
-
-export function itemsLine(items: readonly StatusLineItem[], payload: StatusPayload): string {
+export function itemsLine(payload: StatusPayload): string {
   const parts: string[] = [];
-  for (const item of items) {
-    const value = segment(item, payload);
-    if (value) parts.push(value);
+  const dir = payload.workspace?.current_dir ?? payload.cwd;
+  if (dir) parts.push(elide(basename(dir), 40));
+  const name = payload.model?.display_name ?? payload.model?.id;
+  if (name) parts.push(elide(name, 30));
+  const percent = payload.context_window?.used_percentage;
+  if (typeof percent === "number" && Number.isFinite(percent)) {
+    parts.push(`${Math.round(percent)}% ctx`);
   }
   return parts.join(SEPARATOR);
 }
@@ -100,13 +70,8 @@ export function itemsLine(items: readonly StatusLineItem[], payload: StatusPaylo
  * always printed — even empty — and the hint is an extra line rather than a replacement, so
  * the row does not jump a line as a hint comes and goes.
  */
-export function statusLine(
-  items: readonly StatusLineItem[],
-  payload: StatusPayload,
-  hint: boolean,
-  color = true,
-): string {
-  const first = itemsLine(items, payload);
+export function statusLine(payload: StatusPayload, hint: boolean, color = true): string {
+  const first = itemsLine(payload);
   const highlighted = color ? `${BOLD}${AMBER}${HINT}${RESET}` : HINT;
   const lines = [first.slice(0, MAX_LINE)];
   if (hint) lines.push(highlighted.slice(0, MAX_LINE));
