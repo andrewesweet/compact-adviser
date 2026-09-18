@@ -21,6 +21,7 @@
 //      and the hint.
 //   4. The plugin itself is installed, enabled, and its /compact-adviser command discoverable.
 //   5. With mode off the same turn asks TypeSafe nothing.
+//   6. With the session kill switch set, a real turn asks TypeSafe nothing and paints no hint.
 //
 // COMPACT_TEST_KEEP_LAB=1 keeps the lab directory for inspection.
 
@@ -206,7 +207,7 @@ function agentEnv() {
 }
 
 /** One prompt through a fresh `grok agent … stdio` process; resolves with its session id. */
-function runTurn(prompt) {
+function runTurn(prompt, extraEnv = {}) {
   return new Promise((resolve, reject) => {
     const child = spawn(
       GROK,
@@ -225,7 +226,7 @@ function runTurn(prompt) {
         join(lab, "grok-debug.log"),
         "stdio",
       ],
-      { stdio: ["pipe", "pipe", "pipe"], env: agentEnv() },
+      { stdio: ["pipe", "pipe", "pipe"], env: { ...agentEnv(), ...extraEnv } },
     );
     const timer = setTimeout(() => {
       child.kill("SIGKILL");
@@ -388,6 +389,19 @@ try {
   cli(["mode", "off"]);
   await runTurn("Say again that everything is committed and nothing is pending.");
   check(jevRequests.length === 1, "mode off asks TypeSafe nothing");
+
+  cli(["mode", "hint"]);
+  const disabledSessionId = await runTurn(
+    "Say once more that everything is committed and nothing is pending.",
+    { COMPACT_ADVISER_DISABLE: "1" },
+  );
+  check(jevRequests.length === 1, "the disabled real turn asks TypeSafe nothing");
+  const disabledRow = execFileSync(join(dataDir, "status-line.sh"), [], {
+    encoding: "utf8",
+    input: JSON.stringify({ ...JSON.parse(payload), session_id: disabledSessionId }),
+    env: { ...agentEnv(), COMPACT_ADVISER_DISABLE: "1" },
+  });
+  check(!disabledRow.includes(HINT), "the disabled real turn paints no hint", disabledRow.trim());
 } catch (error) {
   failure = error;
 } finally {
