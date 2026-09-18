@@ -100,7 +100,7 @@ Then two one-time steps, because Grok does not let a plugin do either of them fo
 /compact-adviser install
 ```
 
-That writes `~/.grok/hooks/compact-adviser.json`, because **Grok 1.0.34 lists a plugin's own `hooks/hooks.json` but never loads it into a session**. Hooks in your own Grok home are always trusted, so nothing else is needed; delete that file to remove them. Afterwards the same command is also a plain shell one: `~/.grok/compact-adviser/adviser.sh install`.
+That writes `~/.grok/hooks/compact-adviser.json`, because **Grok 1.0.34 lists a plugin's own `hooks/hooks.json` but never loads it into a session**. Hooks in your own Grok home are always trusted, so nothing else is needed; delete that file to remove them. From a shell it is `node "$(grok plugin list --json | jq -r '.[] | select(.name == "compact-adviser") | .path')/bin/adviser.ts" install`, and after the first run simply `~/.grok/compact-adviser/adviser.sh install`.
 
 Then paste the `[ui.status_line]` block `install` printed into your own `~/.grok/config.toml` and restart Grok. The status row is off by default and only your own config can turn it on - a plugin cannot, and neither can a repository. Grok has one status row, so this script paints the built-in segments (`cwd`, `model`, `context`) too; change them with `/compact-adviser items`. Minimal render mode has no status row at all.
 
