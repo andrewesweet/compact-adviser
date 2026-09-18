@@ -187,8 +187,7 @@ export function score(j: Judgment): number {
 }
 
 /**
- * The hint floor for a context usage fraction (tokens over the limit at which
- * the host compacts; each host's usageFraction picks that limit).
+ * The hint floor for a context usage fraction (tokens over the model's window).
  * A wrong hint costs most while there is room left and least when compaction
  * is imminent, so the floor is strict at low usage and relaxes as the window
  * fills. Unknown usage gets the strictest floor.
