@@ -39,8 +39,22 @@ function readJson(path: string): unknown {
 }
 
 export function loadSessionState(path: string, now: number): SessionState {
-  const value = readJson(path);
-  return value === undefined ? initialState(false, now) : restoreState(value, now);
+  let text: string;
+  try {
+    text = readFileSync(path, "utf8");
+  } catch (error) {
+    if ((error as { code?: string }).code === "ENOENT") return initialState(false, now);
+    throw new Error("Cannot read the compact-adviser session state file; no action is taken.");
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    throw new Error(
+      "The compact-adviser session state file is not valid JSON; no action is taken.",
+    );
+  }
+  return restoreState(parsed, now);
 }
 
 export function saveSessionState(path: string, state: SessionState): void {

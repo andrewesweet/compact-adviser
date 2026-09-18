@@ -397,6 +397,58 @@ test("an unreadable settings file stops the product instead of guessing", async 
   assert.match(status.stderr, /Cannot read the compact-adviser mode setting/);
 });
 
+test("a corrupt session state file does not bypass snooze or post-compaction cooldown", async (t) => {
+  const { l, fixture } = await judgeTurn(t);
+  await runCli(["hook", "stop"], { lab: l, stdin: stopPayload(l), env: keyed(fixture) });
+  assert.equal(fixture.bodies.length, 1);
+  await runCli(["snooze"], { lab: l });
+  writeFileSync(join(l.dataDir, "sessions", `${l.sessionId}.json`), "not json at all\n");
+  writeHistory(l, [...workedHistory("one"), ...workedHistory("two").slice(1)]);
+  await runCli(["hook", "stop"], {
+    lab: l,
+    stdin: stopPayload(l, { promptId: "prompt-2" }),
+    env: keyed(fixture),
+  });
+  assert.equal(fixture.bodies.length, 1);
+  assert.ok(
+    !(await runCli(["status-line"], { lab: l, stdin: statusPayload(l) })).stdout.includes(HINT),
+  );
+
+  const compacted = await judgeTurn(t);
+  await runCli(["hook", "stop"], {
+    lab: compacted.l,
+    stdin: stopPayload(compacted.l),
+    env: keyed(compacted.fixture),
+  });
+  await runCli(["hook", "compact"], {
+    lab: compacted.l,
+    stdin: JSON.stringify({
+      hook_event_name: "PostCompact",
+      sessionId: compacted.l.sessionId,
+      trigger: "auto",
+    }),
+  });
+  writeFileSync(
+    join(compacted.l.dataDir, "sessions", `${compacted.l.sessionId}.json`),
+    "not json at all\n",
+  );
+  writeHistory(compacted.l, [...workedHistory("one"), ...workedHistory("two").slice(1)]);
+  await runCli(["hook", "stop"], {
+    lab: compacted.l,
+    stdin: stopPayload(compacted.l, { promptId: "prompt-2" }),
+    env: keyed(compacted.fixture),
+  });
+  assert.equal(compacted.fixture.bodies.length, 1);
+  assert.ok(
+    !(
+      await runCli(["status-line"], {
+        lab: compacted.l,
+        stdin: statusPayload(compacted.l),
+      })
+    ).stdout.includes(HINT),
+  );
+});
+
 test("a settings path that is not a file does not resume judging", async (t) => {
   const { l, fixture } = await judgeTurn(t);
   await runCli(["mode", "off"], { lab: l });
