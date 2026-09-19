@@ -72,6 +72,35 @@ test("a stored profile controls the real hook verdict", async (t) => {
   assert.ok(!row.stdout.includes(HINT));
 });
 
+test("a profile that turns invalid while the judge is pending retires the hint and settles the session", async (t) => {
+  const { l, fixture } = await judgeTurn(t);
+  await runCli(["hook", "stop"], { lab: l, stdin: stopPayload(l), env: keyed(fixture) });
+  assert.ok(
+    (await runCli(["status-line"], { lab: l, stdin: statusPayload(l) })).stdout.includes(HINT),
+  );
+  const statePath = join(l.dataDir, "sessions", `${l.sessionId}.json`);
+  const seeded = JSON.parse(readFileSync(statePath, "utf8")) as { failures: number };
+  writeFileSync(statePath, JSON.stringify({ ...seeded, failures: 3 }));
+  writeHistory(l, [...workedHistory("one"), ...workedHistory("two").slice(1)]);
+  fixture.onRequest = () =>
+    writeFileSync(join(l.dataDir, "settings.json"), '{"version":1,"profile":"not a profile"}');
+  await runCli(["hook", "stop"], {
+    lab: l,
+    stdin: stopPayload(l, { promptId: "prompt-2" }),
+    env: keyed(fixture),
+  });
+  assert.equal(fixture.bodies.length, 2);
+  assert.ok(
+    !(await runCli(["status-line"], { lab: l, stdin: statusPayload(l) })).stdout.includes(HINT),
+  );
+  const settled = JSON.parse(readFileSync(statePath, "utf8")) as {
+    failures: number;
+    retryAfter: number;
+  };
+  assert.equal(settled.failures, 0);
+  assert.equal(settled.retryAfter, 0);
+});
+
 test("the judge sees the person's own words, not Grok's prompt envelopes", async (t) => {
   const { l, fixture } = await judgeTurn(t);
   await runCli(["hook", "stop"], { lab: l, stdin: stopPayload(l), env: keyed(fixture) });

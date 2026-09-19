@@ -101,6 +101,8 @@ export interface Fixture {
   oversize: boolean;
   /** When true, the request is accepted and never answered. */
   hang: boolean;
+  /** Runs after a request body arrives and before it is answered. */
+  onRequest?: () => void;
 }
 
 export function typesafeFixture(t: TestContext): Promise<Fixture> {
@@ -126,6 +128,7 @@ export function typesafeFixture(t: TestContext): Promise<Fixture> {
     });
     request.on("end", () => {
       bodies.push(body);
+      state.onRequest?.();
       if (state.hang) return;
       if (state.status !== undefined) {
         response.writeHead(state.status, { "content-type": "application/json" });

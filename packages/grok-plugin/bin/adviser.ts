@@ -391,7 +391,11 @@ async function runStop(payload: HookPayload): Promise<void> {
   }
   state = { ...state, failures: 0, retryAfter: 0, updatedAt: now };
   clearDiagnostic(diagnosticPath(dataDir(env()), sessionId));
-  if (settingsOrThrow().profile !== settings.profile || !qualifies(judgment, fraction, profile)) {
+  let profileChanged = true;
+  try {
+    profileChanged = settingsOrThrow().profile !== settings.profile;
+  } catch {}
+  if (profileChanged || !qualifies(judgment, fraction, profile)) {
     saveSessionState(statePath, state);
     clearVerdict(verdict);
     return;
