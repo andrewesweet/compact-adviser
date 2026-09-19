@@ -211,6 +211,18 @@ test("status names the mode, the key source, and the latest session's cooldown",
   });
 });
 
+test("status reports the floor the stored profile gates with", async () => {
+  await withLab(async (lab) => {
+    const root = adviserRoot({ CODEX_HOME: lab.home });
+    new ConfigStore(root).update({
+      profile: JSON.stringify({ version: 1, coordinationWeight: 0, floors: [[0, 0.6]] }),
+    });
+    new SessionStore(root).write("s1", initialState(false, 1), { tokens: 50000, window: 200000 });
+    const text = await run(["status"], cli(lab));
+    assert.match(text, /25% of the window; hint floor 0\.60/);
+  });
+});
+
 test("COMPACT_ADVISER_DISABLE makes the CLI take no action", async () => {
   await withLab(async (lab) => {
     const message = await run(

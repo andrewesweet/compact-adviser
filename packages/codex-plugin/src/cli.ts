@@ -25,6 +25,7 @@ import { resolveKey } from "./hook.ts";
 import { floorFor } from "./judge.ts";
 import { requestLogPath } from "./log.ts";
 import { adviserRoot } from "./paths.ts";
+import { parseProfile } from "./profile.ts";
 import { usageFraction } from "./rollout.ts";
 import { cooldownReason } from "./state.ts";
 import { SessionStore } from "./store.ts";
@@ -66,7 +67,7 @@ function statusText(environment: CliEnvironment): string {
         "No cooldown; semantic checks still apply.");
   const usage = latest === undefined ? Number.NaN : usageFraction(latest);
   const window = Number.isFinite(usage)
-    ? ` Context: ${formatTokens(latest?.tokens ?? 0)} tokens, ${Math.round(usage * 100)}% of the window; hint floor ${floorFor(usage).toFixed(2)}.`
+    ? ` Context: ${formatTokens(latest?.tokens ?? 0)} tokens, ${Math.round(usage * 100)}% of the window; hint floor ${floorFor(usage, parseProfile(config.profile)).toFixed(2)}.`
     : "";
   return [
     `Mode: ${config.mode}.`,
