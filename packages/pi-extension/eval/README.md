@@ -13,6 +13,8 @@ stay in gitignored `eval/local/`. Do not commit them. Aggregate per-stratum
 metrics for the shipped judge are in [`measured-results.md`](measured-results.md).
 For session-grouped splits, complete redacted worksheets, independent labellers,
 adjudication, and spend guards, see [`dataset.md`](dataset.md).
+For cached numeric profile search and a locked holdout comparison, see
+[`optimisation.md`](optimisation.md).
 
 ## Setup
 

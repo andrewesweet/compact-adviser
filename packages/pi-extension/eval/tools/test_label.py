@@ -1,11 +1,15 @@
 import json
 from pathlib import Path
 import sys
+import subprocess
 import tempfile
 import unittest
 from unittest.mock import patch
-from collate import collate
-from label import CONTEXT, budget_guard, parse_response, prompt_for, quota_guard, run_one, validate_label
+from assemble import assemble
+from evaluate_profiles import clustered_difference, rank_metrics
+from collate import collate, collect
+from label import CONTEXT, budget_guard, ledger, parse_response, prompt_for, quota_guard, run_one, validate_label
+from optimise import SHIPPED, family, join_rows, metrics, select
 from reduce import reduce_training
 import reuse
 from split import sample_rows, split_sessions
@@ -32,6 +36,26 @@ class LabelTests(unittest.TestCase):
         self.assertIsNone(result["accepted"][0]["context_need"])
         self.assertEqual(len(result["unresolved"]), 1)
         self.assertEqual(result["pairs"], 2)
+
+    def test_retry_collation_keeps_failures_and_never_reads_excluded_holdout(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            def result(provider, name, value):
+                path = root / "raw" / provider / name / "result.json"
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text(json.dumps({"promptHash": "same", **value}))
+            result("fable", "fixture1", {"status": "parse-failed", "label": None})
+            result("fable", "fixture1-initialretry", {"label": fixture()})
+            result("astra", "fixture1", {"label": fixture()})
+            for name in ("fixture2", "fixture2-initialretry"):
+                result("fable", name, {"status": "parse-failed", "label": None})
+            result("astra", "fixture2", {"label": fixture(id="fixture2")})
+            result("fable", "holdout3", {"label": "must not be read"})
+            output = collect(root, ids={"fixture1", "fixture2"})
+            self.assertEqual(output["pairs"], 1)
+            self.assertEqual(output["unpaired"], ["fixture2"])
+            self.assertEqual(len(output["parseFailures"]), 3)
+            self.assertEqual(output["accepted"][0]["id"], "fixture1")
 
     def test_fable_usage(self):
         row = parse_response("fable", json.dumps({"result": json.dumps(fixture()), "usage": {"input_tokens": 10, "output_tokens": 2}, "total_cost_usd": 0.1}), "fixture1")
@@ -64,6 +88,19 @@ class LabelTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     run_one(root, "fable", "fixture1", "changed prompt")
 
+    def test_malformed_label_preserves_usage_without_inventing_truth(self):
+        Path(".test-tmp").mkdir(exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=".test-tmp") as temporary:
+            root = Path(temporary).resolve()
+            answer = json.dumps({"result": '{"id":', "usage": {"input_tokens": 3}, "total_cost_usd": 0.01})
+            with patch("label.COMMANDS", {"fable": [sys.executable, "-c", f"print({answer!r})"]}):
+                result = run_one(root, "fable", "fixture1", "prompt")
+            self.assertEqual(result["status"], "parse-failed")
+            self.assertIsNone(result["label"])
+            self.assertEqual(ledger(root)[0]["costUsd"], 0.01)
+            with patch("label.COMMANDS", {}):
+                self.assertEqual(run_one(root, "fable", "fixture1", "prompt"), result)
+
     def test_incomplete_call_refuses_automatic_retry(self):
         Path(".test-tmp").mkdir(exist_ok=True)
         with tempfile.TemporaryDirectory(dir=".test-tmp") as temporary:
@@ -75,6 +112,22 @@ class LabelTests(unittest.TestCase):
             with patch("label.COMMANDS", {}):
                 with self.assertRaisesRegex(ValueError, "Incomplete paid call"):
                     run_one(root, "fable", "fixture1", "prompt")
+
+    def test_assembly_keeps_usage_inference_explicit_and_unknown_strict(self):
+        row = {"id": "fixture1", "group": "group1", "split": "train", "contextTokens": 50000, "harness": "claude"}
+        evidence = {"id": "fixture1", "contextTokens": 50000, "patchedUsage": 0.25}
+        known = assemble([[row]], [evidence])[0]
+        self.assertEqual(known["contextUsage"], 0.25)
+        self.assertIn("inference", known["usageSource"])
+        self.assertIsNone(assemble([[row]])[0]["contextUsage"])
+        pi = {**row, "harness": "pi", "contextUsage": 0.25, "usageSource": "observed model window"}
+        self.assertEqual(assemble([[pi]])[0]["contextUsage"], 0.25)
+        with self.assertRaisesRegex(ValueError, "only to Claude"):
+            assemble([[pi]], [evidence])
+        with self.assertRaisesRegex(ValueError, "token count"):
+            assemble([[row]], [{**evidence, "contextTokens": 60000}])
+        with self.assertRaisesRegex(ValueError, "crosses"):
+            assemble([[row, {**row, "id": "fixture2", "split": "holdout"}]])
 
     def test_linked_sessions_never_cross_splits(self):
         sessions = [{"session": str(i), "source": {"host": "pi", "stratum": "coding"},
@@ -91,6 +144,84 @@ class LabelTests(unittest.TestCase):
         sampled = sample_rows(rows, assignments, {"coding": {"train": 6}}, "seed")
         self.assertEqual(len(sampled), 3)
         self.assertTrue(all(row["sampling"] == "spread" for row in sampled))
+
+    def test_rank_statistics_handle_ties_and_absent_classes(self):
+        def row(positive):
+            return {"ok": True, "usage": 0.5, "doneP": {"finished": 0.8}, "shapeP": {"hands_on": 1},
+                    "label": fixture(phase_gold="completed_checkpoint" if positive else "still_in_progress")}
+        positive, negative = row(True), row(False)
+        self.assertEqual(rank_metrics([positive, negative], SHIPPED)["ap"], 0.5)
+        self.assertEqual(rank_metrics([negative, positive], SHIPPED)["ap"], 0.5)
+        self.assertEqual(rank_metrics([positive, negative], SHIPPED)["auc"], 0.5)
+        self.assertIsNone(rank_metrics([positive], SHIPPED)["auc"])
+        self.assertIsNone(rank_metrics([negative], SHIPPED)["ap"])
+
+    def test_offline_cli_smoke_freezes_selects_and_reports_without_network(self):
+        Path(".test-tmp").mkdir(exist_ok=True)
+        tools = Path(__file__).parent.resolve()
+        with tempfile.TemporaryDirectory(dir=".test-tmp") as temporary:
+            root = Path(temporary).resolve()
+            checkpoints, labels, results = [], [], []
+            for split in ("train", "validation", "holdout"):
+                for positive in (True, False):
+                    key = split + ("positive" if positive else "negative")
+                    checkpoints.append({"id": key, "group": key, "split": split,
+                                        "stratum": "fixture-worker", "contextUsage": 0.5, "state": {}})
+                    labels.append(fixture(id=key, phase_gold="completed_checkpoint" if positive else "still_in_progress", task_boundary=positive))
+                    results.append({"id": key, "ok": True, "model": "fixture-jev", "usage": 0.5,
+                                    "done": "finished" if positive else "not_finished", "shape": "coordinating",
+                                    "doneP": {"finished": 0.95 if positive else 0.1}, "shapeP": {"hands_on": 0}})
+            for name, values in (("checkpoints", checkpoints), ("labels", labels),
+                                 ("development", results[:4]), ("holdout", results[4:])):
+                (root / f"{name}.jsonl").write_text("".join(json.dumps(value) + "\n" for value in values))
+            def command(script, *args):
+                return subprocess.run([sys.executable, str(tools / script), *map(str, args)], check=True, capture_output=True, text=True)
+            cp = root / "checkpoints.jsonl"
+            command("optimise.py", "freeze", cp, root / "plan.json")
+            command("partition_labels.py", cp, root / "development-labels.jsonl", "development", root / "labels.jsonl")
+            command("optimise.py", "select", cp, root / "development-labels.jsonl", root / "development.jsonl", root / "plan.json", root / "selection.json")
+            command("partition_labels.py", cp, root / "holdout-labels.jsonl", "holdout", root / "labels.jsonl", "--selection", root / "selection.json")
+            command("evaluate_profiles.py", cp, root / "holdout-labels.jsonl", root / "holdout.jsonl", root / "selection.json", root / "report.json", "--bootstrap", 20, "--legacy-output", root / "legacy")
+            report = json.loads((root / "report.json").read_text())
+            self.assertEqual(report["all"]["selected"]["union"]["recall"], 1)
+            self.assertEqual(report["all"]["selected"]["union"]["precision"], 1)
+            self.assertEqual(report["all"]["shipped"]["union"]["hints"], 0)
+            legacy = root / "legacy"
+            command("../metrics.py", legacy / "labels.jsonl", legacy / "checkpoints.jsonl", legacy / "selected.jsonl")
+            command("schedule.py", legacy / "labels.jsonl", legacy / "selected.jsonl", "p['decision']['positive']", 0.4, 0.6)
+            command("earn.py", legacy / "labels.jsonl", "decision", "p['positive']", f"shipped={legacy / 'shipped.jsonl'}", f"selected={legacy / 'selected.jsonl'}", "--n20")
+
+    def test_session_bootstrap_is_paired_deterministic_and_aggregate_only(self):
+        rows = [{"ok": True, "group": group, "stratum": "fixture-worker", "usage": 0.5,
+                 "doneP": {"finished": 0.9 if positive else 0.1}, "shapeP": {"hands_on": 1},
+                 "label": fixture(phase_gold="completed_checkpoint" if positive else "still_in_progress")}
+                for group in ("private-group-one", "private-group-two") for positive in (True, False)]
+        measured = clustered_difference(rows, SHIPPED, SHIPPED, repeats=50)
+        self.assertEqual(measured, clustered_difference(rows, SHIPPED, SHIPPED, repeats=50))
+        self.assertEqual(measured["intervals"]["recall"]["lower95"], 0)
+        self.assertEqual(measured["intervals"]["precision"]["upper95"], 0)
+        self.assertNotIn("private-group-one", json.dumps(measured))
+        self.assertIsNone(clustered_difference(rows[:2], SHIPPED, SHIPPED)["intervals"])
+
+    def test_numeric_selection_uses_only_training_validation_and_keeps_unknown_separate(self):
+        def row(positive):
+            return {"stratum": "fixture-worker", "ok": True, "usage": 0.5,
+                    "doneP": {"finished": 0.6 if positive else 0.1}, "shapeP": {"hands_on": 0},
+                    "label": fixture(phase_gold="completed_checkpoint" if positive else "still_in_progress")}
+        rows = [row(True), row(True), row(False)]
+        chosen = select(rows, rows, family())
+        selected = json.loads(chosen["profile"])
+        self.assertTrue(chosen["selectedMeetsConstraints"])
+        self.assertTrue(chosen["flatMeetsConstraints"])
+        self.assertEqual(chosen["flatProfile"]["floors"], [[0, 0.3]])
+        self.assertEqual(metrics(rows, selected)["precision"], 1)
+        self.assertEqual(metrics(rows, selected)["recall"], 1)
+        unknown = {**row(True), "label": fixture(context_need="unknown", safe_to_compact=None)}
+        self.assertEqual(metrics([unknown], SHIPPED)["unknown"], 1)
+        self.assertIsNone(metrics([unknown], SHIPPED)["precision"])
+        checkpoints = [{"id": "holdout1", "group": "g", "stratum": "fixture-worker", "split": "holdout"}]
+        with self.assertRaisesRegex(ValueError, "outside"):
+            join_rows(checkpoints, [fixture(id="holdout1")], [], "development")
 
     def test_reduction_preserves_validation_holdout_and_pilot(self):
         manifest = {"plan": {"seed": "fixed", "targets": {"coding": {"train": 4, "validation": 1, "holdout": 1}}},

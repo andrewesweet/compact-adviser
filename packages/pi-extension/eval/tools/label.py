@@ -121,8 +121,14 @@ def parse_response(provider, text, checkpoint_id):
         answer = "\n".join(part["text"] for part in message["content"] if part.get("type") == "text")
     if tokens <= 0:
         raise ValueError("Usage unavailable")
-    return {"label": validate_label(json_text(answer), checkpoint_id), "usage": usage, "tokens": tokens,
-            "costUsd": cost, "costKind": "cli-reported" if provider == "fable" else "assumed-5-input-25-output-per-million"}
+    result = {"usage": usage, "tokens": tokens, "costUsd": cost,
+              "costKind": "cli-reported" if provider == "fable" else "assumed-5-input-25-output-per-million"}
+    try:
+        result["label"] = validate_label(json_text(answer), checkpoint_id)
+    except (ValueError, TypeError):
+        # A malformed answer is still a paid call. Never invent a label or lose usage.
+        result.update(label=None, status="parse-failed")
+    return result
 
 
 def quota_guard(root, reserves, command="quota-axi"):
@@ -265,16 +271,20 @@ def main():
         quota_guard(root, reserves)
         for checkpoint_id in ids[offset:offset + 5]:
             for provider in PROVIDERS:
-                results = ledger(root)
-                count = sum(row["provider"] == provider for row in results)
-                cached = (call_directory(root, provider, checkpoint_id, args.round_id) / "result.json").exists()
-                budget_guard(results, args.allowance, caps, args.reserve_usd)
-                if not cached and count >= caps[provider]:
-                    if args.calibration:
-                        continue
-                    raise ValueError("Provider call cap reached")
-                result = run_one(root, provider, checkpoint_id, prompts[checkpoint_id], round_id=args.round_id)
-                print(f"{provider}: {result['tokens']} tokens, ${result['costUsd']:.4f}", flush=True)
+                for round_id in (args.round_id, args.round_id + "retry"):
+                    results = ledger(root)
+                    count = sum(row["provider"] == provider for row in results)
+                    cached = (call_directory(root, provider, checkpoint_id, round_id) / "result.json").exists()
+                    budget_guard(results, args.allowance, caps, args.reserve_usd)
+                    if not cached and count >= caps[provider]:
+                        if args.calibration:
+                            break
+                        raise ValueError("Provider call cap reached")
+                    result = run_one(root, provider, checkpoint_id, prompts[checkpoint_id], round_id=round_id)
+                    print(f"{provider}: {result['tokens']} tokens, ${result['costUsd']:.4f}", flush=True)
+                    if result.get("status") != "parse-failed":
+                        break
+                # Two malformed answers leave this provider unresolved; continue the cohort.
         quota_guard(root, reserves)
     if args.calibration:
         budget_guard(ledger(root), args.allowance, caps, args.reserve_usd)
