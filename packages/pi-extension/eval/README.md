@@ -246,7 +246,7 @@ and again with pivots excluded.
 ## Gitignore boundary
 
 Tracked: the runner, `eval/tools/` (miners and probes), `corpus.example.json` /
-`corpus.example.ts`, this README, `measured-results.md`, and `eval/local/.gitignore`.
+`corpus.example.ts`, this README, `dataset.md`, `measured-results.md`, and `eval/local/.gitignore`.
 
 Never commit: `eval/local/**` (except that gitignore file), `checkpoints*.jsonl`,
 `results*.jsonl`, `ablation*.jsonl`, `worksheet/`, or any other session-derived
