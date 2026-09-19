@@ -120,6 +120,20 @@ describe("the COMPACT_ADVISER_DISABLE kill switch", () => {
 });
 
 describe("turn-end gates", () => {
+  test("the selected profile reaches the hook gate and response log", async ($, on) => {
+    const w = world(on, { logRequests: true });
+    w.rows.set(
+      `${PLUGIN}.profile`,
+      JSON.stringify({ version: 1, coordinationWeight: 1, floors: [[0, 1]] }),
+    );
+    await $.session.start(interactiveStart);
+    await turnEnd($, w);
+    expect(w.journal.requests).toHaveLength(1);
+    expect(hinted(w)).toBe(false);
+    const response = lastJsonl(w.journal.fsWrites[1]);
+    expect(response.floor).toBe(1);
+    expect(response.qualifies).toBe(false);
+  });
   test("a qualifying settled checkpoint shows the hint once, without blocking the turn", async ($, on) => {
     const w = world(on);
     await $.session.start(interactiveStart);

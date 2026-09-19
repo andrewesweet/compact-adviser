@@ -21,6 +21,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { dirname, join } from "node:path";
+import { parseProfile } from "./profile.ts";
 
 export type Mode = "hint" | "off";
 export const MODES: readonly Mode[] = ["hint", "off"];
@@ -28,7 +29,7 @@ export const DEFAULT_MINIMUM = 40000;
 export const MAX_SAVED_API_KEY_LENGTH = 1024;
 export const SETTINGS_NAME = "settings.json";
 /** A settings file larger than this is not one this product wrote. */
-const MAX_SETTINGS_BYTES = 8192;
+const MAX_SETTINGS_BYTES = 16384;
 
 export interface Config {
   version: 1;
@@ -36,6 +37,7 @@ export interface Config {
   minContextTokens: number;
   logRequests: boolean;
   typesafeApiKey?: string;
+  profile?: string;
 }
 
 export const DEFAULT_CONFIG: Readonly<Config> = Object.freeze({
@@ -96,6 +98,7 @@ export function validateConfig(value: unknown): Config {
   ) {
     throw new Error("Invalid or unsupported settings. Restore a valid version-1 configuration.");
   }
+  parseProfile(c.profile);
   const typesafeApiKey =
     typeof c.typesafeApiKey === "string" && c.typesafeApiKey.trim() !== ""
       ? c.typesafeApiKey.trim()
@@ -109,6 +112,7 @@ export function validateConfig(value: unknown): Config {
     minContextTokens: c.minContextTokens,
     logRequests: c.logRequests === true,
     ...(typesafeApiKey !== undefined ? { typesafeApiKey } : {}),
+    ...(c.profile !== undefined ? { profile: c.profile as string } : {}),
   };
 }
 

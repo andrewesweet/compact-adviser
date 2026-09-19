@@ -26,6 +26,7 @@ import {
 import { promptSecret } from "./key-input.ts";
 import { appendErrorLog, appendRequestLog, appendResponseLog, requestLogPath } from "./log.ts";
 import { promptMinimum } from "./minimum-input.ts";
+import { type JudgeProfile, parseProfile } from "./profile.ts";
 import {
   cooldownReason,
   initialState,
@@ -44,7 +45,12 @@ interface Options {
   version: string;
   key?: () => string | undefined;
   now?: () => number;
-  evaluate?: (state: unknown, key: string, signal: AbortSignal) => Promise<Judgment>;
+  evaluate?: (
+    state: unknown,
+    key: string,
+    signal: AbortSignal,
+    profile?: JudgeProfile,
+  ) => Promise<Judgment>;
 }
 function savedApiKey(store: ConfigStore): string | undefined {
   try {
@@ -69,7 +75,9 @@ export function installAdviser(pi: ExtensionAPI, options: Options): void {
   };
   const key = () => resolvedKey().value;
   const now = options.now ?? Date.now;
-  const evaluate = options.evaluate ?? judge;
+  const evaluate =
+    options.evaluate ??
+    ((state, key, signal, profile) => judge(state, key, signal, undefined, undefined, profile));
   const [major, minor] = options.version.split(".").map(Number);
   const supported = Number.isFinite(major) && (major > 0 || minor >= 82);
   let generation = 0;
@@ -172,12 +180,13 @@ export function installAdviser(pi: ExtensionAPI, options: Options): void {
       return;
     }
     if (request || eligible(ctx, config, state) === undefined) return;
+    const profile = parseProfile(config.profile);
     const view = snapshot(ctx, [key(), savedApiKey(store)]);
     if (view.conversationTokens <= 20000 || view.checkpointKey === state.lastHintKey) return;
     let loggedBody: string | undefined;
     if (config.logRequests) {
       try {
-        loggedBody = requestBody(view.state);
+        loggedBody = requestBody(view.state, profile);
         appendRequestLog(options.agentDir, loggedBody);
       } catch {
         // Request logging must not replace or delay the judgment.
@@ -191,15 +200,16 @@ export function installAdviser(pi: ExtensionAPI, options: Options): void {
     const current = () =>
       !controller.signal.aborted && generation === epoch && sessionIdentity(ctx) === identity;
     try {
-      const result = await evaluate(view.state, key()?.trim() ?? "", controller.signal);
+      const result = await evaluate(view.state, key()?.trim() ?? "", controller.signal, profile);
       if (!current()) return;
       if (config.logRequests) {
         try {
           appendResponseLog(
             options.agentDir,
-            loggedBody ?? requestBody(view.state),
+            loggedBody ?? requestBody(view.state, profile),
             result,
             usageFraction(ctx),
+            profile,
           );
         } catch {
           // Response logging must not replace the gate decision.
@@ -211,7 +221,7 @@ export function installAdviser(pi: ExtensionAPI, options: Options): void {
         return;
       state = { ...state, failures: 0, retryAfter: 0 };
       const auto = latest.mode === "auto";
-      if (!qualifies(result, usageFraction(ctx))) {
+      if (!qualifies(result, usageFraction(ctx), profile)) {
         persist(state);
         return;
       }
@@ -399,7 +409,7 @@ export function installAdviser(pi: ExtensionAPI, options: Options): void {
       t = ctx.getContextUsage()?.tokens,
       u = usageFraction(ctx);
     ctx.ui.notify(
-      `Mode: ${c.mode}. Minimum: ${c.minContextTokens.toLocaleString("en-US")} tokens. Context: ${t ?? "unknown"}${Number.isFinite(u) ? ` (${Math.round(u * 100)}% of the window; hint floor ${floorFor(u).toFixed(2)})` : ""}. ${formatKeyStatus(resolvedKey().source)}. ${typeof t === "number" ? (cooldownReason(s, t, now()) ?? "No cooldown; semantic checks still apply.") : "Waiting for fresh model usage."} Request log: ${c.logRequests ? requestLogPath(options.agentDir) : "off"}. Settings: ${store.path}`,
+      `Mode: ${c.mode}. Minimum: ${c.minContextTokens.toLocaleString("en-US")} tokens. Context: ${t ?? "unknown"}${Number.isFinite(u) ? ` (${Math.round(u * 100)}% of the window; hint floor ${floorFor(u, parseProfile(c.profile)).toFixed(2)})` : ""}. ${formatKeyStatus(resolvedKey().source)}. ${typeof t === "number" ? (cooldownReason(s, t, now()) ?? "No cooldown; semantic checks still apply.") : "Waiting for fresh model usage."} Request log: ${c.logRequests ? requestLogPath(options.agentDir) : "off"}. Settings: ${store.path}`,
       "info",
     );
   }

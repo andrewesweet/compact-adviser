@@ -12,6 +12,7 @@ import {
 } from "node:fs";
 import { dirname, join } from "node:path";
 import { lockSync } from "proper-lockfile";
+import { parseProfile } from "./profile.ts";
 
 export type Mode = "hint" | "auto" | "off";
 export const MAX_SAVED_API_KEY_LENGTH = 1024;
@@ -22,6 +23,7 @@ export interface Config {
   autoAcknowledged: boolean;
   logRequests: boolean;
   typesafeApiKey?: string;
+  profile?: string;
 }
 export const DEFAULT_CONFIG: Readonly<Config> = Object.freeze({
   version: 1,
@@ -68,6 +70,7 @@ function validate(value: unknown): Config {
   ) {
     throw new Error("Invalid or unsupported settings. Restore a valid version-1 configuration.");
   }
+  parseProfile(c.profile);
   const typesafeApiKey =
     typeof c.typesafeApiKey === "string" && c.typesafeApiKey.trim() !== ""
       ? c.typesafeApiKey.trim()
@@ -82,6 +85,7 @@ function validate(value: unknown): Config {
     autoAcknowledged: c.autoAcknowledged,
     logRequests: c.logRequests === true,
     ...(typesafeApiKey !== undefined ? { typesafeApiKey } : {}),
+    ...(c.profile !== undefined ? { profile: c.profile as string } : {}),
   };
 }
 export class ConfigStore {
@@ -92,7 +96,7 @@ export class ConfigStore {
   read(): Config {
     try {
       const stat = lstatSync(this.path);
-      if (!stat.isFile() || stat.isSymbolicLink() || stat.size > 8192)
+      if (!stat.isFile() || stat.isSymbolicLink() || stat.size > 16384)
         throw new Error("Unsafe settings file.");
       return validate(JSON.parse(readFileSync(this.path, "utf8")));
     } catch (error) {

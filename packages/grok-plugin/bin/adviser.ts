@@ -72,6 +72,7 @@ import {
   settingsPath,
   verdictPath,
 } from "../lib/paths.ts";
+import { parseProfile } from "../lib/profile.ts";
 import { snapshot } from "../lib/snapshot.ts";
 import { backoff, completeExchange, cooldownReason, SESSION_RETENTION_MS } from "../lib/state.ts";
 import { parsePayload, statusLine } from "../lib/statusline.ts";
@@ -340,13 +341,14 @@ async function runStop(payload: HookPayload): Promise<void> {
   if (tokens < settings.minContextTokens) return;
   if (cooldownReason(state, tokens, now) !== undefined) return;
 
+  const profile = parseProfile(settings.profile);
   const fingerprint = checkpointKey(view.checkpointText);
   if (state.lastHintKey === fingerprint) return;
 
   let loggedBody: string | undefined;
   if (settings.logRequests) {
     try {
-      loggedBody = requestBody(view.state);
+      loggedBody = requestBody(view.state, profile);
       appendLog(sessionId, requestLogLine(loggedBody));
     } catch {
       // A body too large to send is reported by `judge` below; logging does not decide.
@@ -355,10 +357,15 @@ async function runStop(payload: HookPayload): Promise<void> {
   const endpoint = testEndpoint();
   let judgment: Awaited<ReturnType<typeof judge>>;
   try {
-    judgment = await judge(view.state, activeKey, {
-      ...cancellableJudgeTransport(),
-      ...(endpoint ? { endpoint } : {}),
-    });
+    judgment = await judge(
+      view.state,
+      activeKey,
+      {
+        ...cancellableJudgeTransport(),
+        ...(endpoint ? { endpoint } : {}),
+      },
+      profile,
+    );
   } catch (error) {
     if (settings.logRequests) {
       appendLog(sessionId, errorLogLine(loggedJudgeErrorKind(error), loggedBody));
@@ -373,12 +380,18 @@ async function runStop(payload: HookPayload): Promise<void> {
   if (settings.logRequests) {
     appendLog(
       sessionId,
-      responseLogLine(loggedBody ?? requestBody(view.state), judgment, fraction),
+      responseLogLine(
+        loggedBody ?? requestBody(view.state, profile),
+        judgment,
+        fraction,
+        undefined,
+        profile,
+      ),
     );
   }
   state = { ...state, failures: 0, retryAfter: 0, updatedAt: now };
   clearDiagnostic(diagnosticPath(dataDir(env()), sessionId));
-  if (!qualifies(judgment, fraction)) {
+  if (settingsOrThrow().profile !== settings.profile || !qualifies(judgment, fraction, profile)) {
     saveSessionState(statePath, state);
     clearVerdict(verdict);
     return;
@@ -391,8 +404,8 @@ async function runStop(payload: HookPayload): Promise<void> {
     promptId: typeof payload.promptId === "string" ? payload.promptId : null,
     at: now,
     tokens: usage.tokens ?? null,
-    score: score(judgment),
-    floor: floorFor(fraction),
+    score: score(judgment, profile),
+    floor: floorFor(fraction, profile),
   });
 }
 
@@ -610,8 +623,8 @@ function statusText(): string {
       `Session ${sessionId}: ${state.completed} completed exchange(s) since the last compaction.`,
       `Context: ${usage.tokens === undefined ? "unknown" : formatTokens(usage.tokens)}${
         Number.isFinite(fraction)
-          ? ` (${Math.round(fraction * 100)}% of the window; hint floor ${floorFor(fraction).toFixed(2)})`
-          : ` (usage unknown; hint floor ${floorFor(Number.NaN).toFixed(2)})`
+          ? ` (${Math.round(fraction * 100)}% of the window; hint floor ${floorFor(fraction, parseProfile(settings.profile)).toFixed(2)})`
+          : ` (usage unknown; hint floor ${floorFor(Number.NaN, parseProfile(settings.profile)).toFixed(2)})`
       }.`,
       `Cooldown: ${
         usage.tokens === undefined

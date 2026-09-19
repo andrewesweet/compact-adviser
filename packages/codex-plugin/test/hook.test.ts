@@ -64,6 +64,26 @@ test("a settled, large-enough checkpoint is judged once and hints", async () => 
   });
 });
 
+test("a stored profile reaches the hook request and gate", async () => {
+  await withLab(async (lab) => {
+    writeRollout(lab.transcript, settledRollout());
+    const root = adviserRoot({ CODEX_HOME: lab.home });
+    new ConfigStore(root).update({
+      profile: JSON.stringify({ version: 1, coordinationWeight: 1, floors: [[0, 1]] }),
+      logRequests: true,
+    });
+    const typesafe = fakeTypesafe();
+    assert.deepEqual(await handle(stop(lab), environment(lab, { fetch: typesafe.fetch })), {});
+    assert.equal(typesafe.requests.length, 1);
+    const rows = readFileSync(requestLogPath(root, "s1"), "utf8")
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line));
+    assert.equal(rows[1].floor, 1);
+    assert.equal(rows[1].qualifies, false);
+  });
+});
+
 test("the same checkpoint is never judged twice", async () => {
   await withLab(async (lab) => {
     writeRollout(lab.transcript, settledRollout());

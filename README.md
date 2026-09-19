@@ -185,6 +185,10 @@ On Codex the same commands are arguments to the plugin's `src/cli.ts` (`status`,
 command, because Codex plugins cannot register a command with code behind it. Codex has no
 snooze or dismiss: the CLI cannot tell which session is current.
 
+## Judge profiles
+
+An optional [judge profile](docs/judge-profiles.md) changes the two questions, score weight, or floor schedule without changing shipped defaults. All four hosts accept the same bounded JSON string in the `profile` setting. Keep hint mode while evaluating a profile. Invalid profiles disable advice, and loading a profile never grants automatic-mode consent.
+
 ## Eval
 
 Local judgment eval uses real session checkpoints to score when the adviser should suggest `/compact`. The curve below is from a follow-up-aware gold set (96 checkpoints, 40 sessions): as the context window fills, the score threshold loosens from **0.90** (≤10% used) to **0.50** (≥90% used) so **recall rises** while precision stays high - favoring token savings when compaction is about to be forced anyway.

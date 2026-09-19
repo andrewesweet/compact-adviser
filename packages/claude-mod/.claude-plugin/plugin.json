@@ -40,6 +40,12 @@
       "description": "When on, each TypeSafe/Jev request and sanitized Jev outcome is appended to ~/.claude/compact-adviser-requests-<session-id>.jsonl. Off by default. Never logs the API key.",
       "default": false
     },
+    "profile": {
+      "type": "string",
+      "title": "Judge profile JSON",
+      "description": "Optional version-1 judge profile JSON. Empty uses shipped defaults. Invalid profiles disable advice. This does not grant auto consent.",
+      "default": ""
+    },
     "typesafeApiKey": {
       "type": "string",
       "title": "TypeSafe API key",

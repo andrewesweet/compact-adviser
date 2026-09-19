@@ -18,6 +18,8 @@ export const MAX_SAVED_API_KEY_LENGTH = 1024;
 /** The built-in status-line segments this package paints in place of Grok's own row. */
 export const STATUS_LINE_ITEMS = ["cwd", "model", "context"] as const;
 
+import { parseProfile } from "./profile.ts";
+
 export interface Settings {
   version: 1;
   mode: Mode;
@@ -25,6 +27,7 @@ export interface Settings {
   logRequests: boolean;
   /** Saved TypeSafe key; a non-empty `TYPESAFE_API_KEY` in the environment still wins. */
   typesafeApiKey: string;
+  profile?: string;
 }
 
 export const DEFAULT_SETTINGS: Readonly<Settings> = Object.freeze({
@@ -109,9 +112,11 @@ export function parseSettings(value: unknown): Settings {
       "Cannot read the compact-adviser TypeSafe key setting; no action is taken.",
     );
   }
+  parseProfile(s.profile);
   return {
     version: 1,
     mode: mode as Mode,
+    ...(s.profile !== undefined ? { profile: s.profile } : {}),
     minContextTokens: minimum,
     logRequests,
     typesafeApiKey: key,

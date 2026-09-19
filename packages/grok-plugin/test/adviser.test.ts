@@ -56,6 +56,22 @@ test("a qualifying checkpoint puts the hint on the status row, and the Stop gate
   assert.ok(row.stdout.includes(HINT));
 });
 
+test("a stored profile controls the real hook verdict", async (t) => {
+  const { l, fixture } = await judgeTurn(t);
+  mkdirSync(l.dataDir, { recursive: true });
+  writeFileSync(
+    join(l.dataDir, "settings.json"),
+    JSON.stringify({
+      version: 1,
+      profile: JSON.stringify({ version: 1, coordinationWeight: 1, floors: [[0, 1]] }),
+    }),
+  );
+  await runCli(["hook", "stop"], { lab: l, stdin: stopPayload(l), env: keyed(fixture) });
+  assert.equal(fixture.bodies.length, 1);
+  const row = await runCli(["status-line"], { lab: l, stdin: statusPayload(l) });
+  assert.ok(!row.stdout.includes(HINT));
+});
+
 test("the judge sees the person's own words, not Grok's prompt envelopes", async (t) => {
   const { l, fixture } = await judgeTurn(t);
   await runCli(["hook", "stop"], { lab: l, stdin: stopPayload(l), env: keyed(fixture) });

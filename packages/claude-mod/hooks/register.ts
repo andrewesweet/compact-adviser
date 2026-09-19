@@ -57,6 +57,7 @@ import {
   requestLogPath,
   responseLogLine,
 } from "../lib/log.ts";
+import { parseProfile } from "../lib/profile.ts";
 import { snapshot } from "../lib/snapshot.ts";
 import {
   backoff,
@@ -262,6 +263,7 @@ async function judgeCheckpoint($: EngineInterface, epoch: number): Promise<void>
   judging = true;
   try {
     const initial = await loadConfig($);
+    const profile = parseProfile(initial.profile);
     const [messages, activeKey, rows] = await Promise.all([
       $.session.messages(),
       apiKey($),
@@ -274,7 +276,7 @@ async function judgeCheckpoint($: EngineInterface, epoch: number): Promise<void>
     let loggedBody: string | undefined;
     if (initial.logRequests) {
       try {
-        loggedBody = requestBody(view.state);
+        loggedBody = requestBody(view.state, profile);
         await appendTypeSafeLog($, requestLogLine(loggedBody));
       } catch {
         // Request logging must not replace or delay the judgment.
@@ -283,11 +285,16 @@ async function judgeCheckpoint($: EngineInterface, epoch: number): Promise<void>
     const endpoint = await testEndpoint($);
     let result: Awaited<ReturnType<typeof judge>>;
     try {
-      result = await judge(view.state, await apiKey($), {
-        fetch: (url, init) => $.http.fetch(url, init),
-        sleep: (ms) => $.clock.sleep(ms),
-        ...(endpoint ? { endpoint } : {}),
-      });
+      result = await judge(
+        view.state,
+        await apiKey($),
+        {
+          fetch: (url, init) => $.http.fetch(url, init),
+          sleep: (ms) => $.clock.sleep(ms),
+          ...(endpoint ? { endpoint } : {}),
+        },
+        profile,
+      );
     } catch (error) {
       if (epoch !== generation) return;
       if (initial.logRequests) {
@@ -311,7 +318,13 @@ async function judgeCheckpoint($: EngineInterface, epoch: number): Promise<void>
       try {
         await appendTypeSafeLog(
           $,
-          responseLogLine(loggedBody ?? requestBody(view.state), result, usageFraction(context)),
+          responseLogLine(
+            loggedBody ?? requestBody(view.state, profile),
+            result,
+            usageFraction(context),
+            undefined,
+            profile,
+          ),
         );
       } catch {
         // Response logging must not replace the gate decision.
@@ -324,7 +337,7 @@ async function judgeCheckpoint($: EngineInterface, epoch: number): Promise<void>
       return;
     let state: SessionState = { ...current, failures: 0, retryAfter: 0, updatedAt: now };
     const auto = latest.mode === "auto";
-    if (!qualifies(result, usageFraction(context)) || (auto && !latest.autoAcknowledged)) {
+    if (!qualifies(result, usageFraction(context), profile) || (auto && !latest.autoAcknowledged)) {
       await $.store.set(key, state);
       return;
     }
@@ -653,7 +666,7 @@ async function statusText($: EngineInterface): Promise<string> {
       ? (cooldownReason(state, tokens, await $.clock.now()) ??
         "No cooldown; semantic checks still apply.")
       : "Waiting for fresh model usage.";
-  return `Mode: ${config.mode}${config.mode === "auto" && !config.autoAcknowledged ? " (not confirmed)" : ""}. Minimum: ${formatTokens(config.minContextTokens)} tokens. Context: ${typeof tokens === "number" ? formatTokens(tokens) : "unknown"}${Number.isFinite(usageFraction(usage.context)) ? ` (${Math.round(usageFraction(usage.context) * 100)}% of the context limit; hint floor ${floorFor(usageFraction(usage.context)).toFixed(2)})` : ""}. ${formatKeyStatus((await resolvedKey($)).source)}. ${cooldown}${engine} Request log: ${config.logRequests ? await sessionLogPath($) : "off"}. Settings: /config (compact-adviser rows) and /compact-adviser.`;
+  return `Mode: ${config.mode}${config.mode === "auto" && !config.autoAcknowledged ? " (not confirmed)" : ""}. Minimum: ${formatTokens(config.minContextTokens)} tokens. Context: ${typeof tokens === "number" ? formatTokens(tokens) : "unknown"}${Number.isFinite(usageFraction(usage.context)) ? ` (${Math.round(usageFraction(usage.context) * 100)}% of the context limit; hint floor ${floorFor(usageFraction(usage.context), parseProfile(config.profile)).toFixed(2)})` : ""}. ${formatKeyStatus((await resolvedKey($)).source)}. ${cooldown}${engine} Request log: ${config.logRequests ? await sessionLogPath($) : "off"}. Settings: /config (compact-adviser rows) and /compact-adviser.`;
 }
 
 async function snoozeOrDismiss($: EngineInterface, command: "snooze" | "dismiss") {

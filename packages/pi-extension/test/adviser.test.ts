@@ -78,6 +78,25 @@ test("the hint floor slides with context usage: a finished coordinating unit hin
   assert.ok(!leakedHintNotify(h));
 });
 
+test("a selected profile changes the real hint gate and its response log", async (t) => {
+  const h = harness(t, async () => parseJudgment(apiResponse(1, 0)));
+  h.enable();
+  h.tokens = 45000;
+  h.store.update({
+    logRequests: true,
+    profile: JSON.stringify({ version: 1, coordinationWeight: 0, floors: [[0, 0.6]] }),
+  });
+  await h.fire("agent_settled");
+  assert.ok(showedHint(h));
+  const rows = readFileSync(requestLogPath(h.dir), "utf8")
+    .trim()
+    .split("\n")
+    .map((line) => JSON.parse(line));
+  assert.equal(rows[1].score, 1);
+  assert.equal(rows[1].floor, 0.6);
+  assert.equal(rows[1].qualifies, true);
+});
+
 test("unknown usage, missing key, off, busy, pending, error and non-TUI never call Jev", async (t) => {
   for (const scenario of [
     "unknown",

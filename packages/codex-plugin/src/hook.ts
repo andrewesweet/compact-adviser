@@ -26,6 +26,7 @@ import {
   responseLogLine,
 } from "./log.ts";
 import { adviserRoot } from "./paths.ts";
+import { parseProfile } from "./profile.ts";
 import { type Rollout, readRollout, usageFraction } from "./rollout.ts";
 import { snapshot } from "./snapshot.ts";
 import { backoff, completeExchange, cooldownReason, initialState } from "./state.ts";
@@ -146,6 +147,7 @@ async function onStop(payload: HookPayload, environment: Environment): Promise<H
 
   const root = adviserRoot(environment.env);
   const config = new ConfigStore(root).read();
+  const profile = parseProfile(config.profile);
   const sessions = new SessionStore(root);
   const now = environment.now();
 
@@ -177,7 +179,7 @@ async function onStop(payload: HookPayload, environment: Environment): Promise<H
   let loggedBody: string | undefined;
   if (config.logRequests) {
     try {
-      loggedBody = requestBody(view.state);
+      loggedBody = requestBody(view.state, profile);
       appendRequestLogLine(root, sessionId, requestLogLine(loggedBody));
     } catch {
       // Request logging must not replace or delay the judgment.
@@ -187,10 +189,15 @@ async function onStop(payload: HookPayload, environment: Environment): Promise<H
   const endpoint = testEndpoint(environment.env);
   let result: Awaited<ReturnType<typeof judge>>;
   try {
-    result = await judge(view.state, key.value, {
-      ...cancellableJudgeTransport(environment.fetch),
-      ...(endpoint ? { endpoint } : {}),
-    });
+    result = await judge(
+      view.state,
+      key.value,
+      {
+        ...cancellableJudgeTransport(environment.fetch),
+        ...(endpoint ? { endpoint } : {}),
+      },
+      profile,
+    );
   } catch (error) {
     if (config.logRequests) {
       try {
@@ -216,7 +223,13 @@ async function onStop(payload: HookPayload, environment: Environment): Promise<H
       appendRequestLogLine(
         root,
         sessionId,
-        responseLogLine(loggedBody ?? requestBody(view.state), result, fraction),
+        responseLogLine(
+          loggedBody ?? requestBody(view.state, profile),
+          result,
+          fraction,
+          undefined,
+          profile,
+        ),
       );
     } catch {
       // Response logging must not replace the gate decision.
@@ -231,7 +244,8 @@ async function onStop(payload: HookPayload, environment: Environment): Promise<H
     latestConfig.mode === "off" ||
     tokens < latestConfig.minContextTokens ||
     cooldownReason(current, tokens, nowAfter) !== undefined ||
-    !qualifies(result, fraction)
+    latestConfig.profile !== config.profile ||
+    !qualifies(result, fraction, profile)
   ) {
     sessions.write(sessionId, settled, usage);
     return {};

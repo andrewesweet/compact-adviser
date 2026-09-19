@@ -8,12 +8,15 @@
 // `autoAcknowledged` lives in the plugin's own store so that only this mod's confirmation
 // dialog can grant experimental automatic mode. A legacy `sharingConsent` field is ignored.
 
+import { parseProfile } from "./profile.ts";
+
 export type Mode = "hint" | "auto" | "off";
 export const MODES: readonly Mode[] = ["hint", "auto", "off"];
 export const PLUGIN = "compact-adviser";
 export const MODE_KEY = `${PLUGIN}.mode`;
 export const MINIMUM_KEY = `${PLUGIN}.minContextTokens`;
 export const LOG_KEY = `${PLUGIN}.logRequests`;
+export const PROFILE_KEY = `${PLUGIN}.profile`;
 export const API_KEY_KEY = `${PLUGIN}.typesafeApiKey`;
 export const CONSENT_STORE_KEY = "preferences";
 export const DEFAULT_MINIMUM = 40000;
@@ -24,6 +27,7 @@ export interface Config {
   minContextTokens: number;
   autoAcknowledged: boolean;
   logRequests: boolean;
+  profile?: string;
 }
 
 export interface Consent {
@@ -122,12 +126,15 @@ export function readConfig(
       "Cannot read the compact-adviser request-log setting; no action is taken.",
     );
   }
+  const profile = row(PROFILE_KEY, "profile");
+  parseProfile(profile);
   const consent = parseConsent(consentValue);
   return {
     mode: mode as Mode,
     minContextTokens: minimum,
     autoAcknowledged: consent.autoAcknowledged,
     logRequests: logRequests === true,
+    ...(profile !== undefined ? { profile: profile as string } : {}),
   };
 }
 

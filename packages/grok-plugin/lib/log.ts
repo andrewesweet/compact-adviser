@@ -17,6 +17,8 @@ export function requestLogPath(dataDir: string, sessionId: string): string {
 }
 
 /** Stable correlation id for a request body. FNV-1a 64, matching the other hosts. */
+import type { JudgeProfile } from "./profile.ts";
+
 export function requestLogId(body: string): string {
   let hash = 0xcbf29ce484222325n;
   for (const byte of new TextEncoder().encode(body)) {
@@ -39,6 +41,7 @@ export function responseLogLine(
   judgment: Judgment,
   usage: number,
   at = new Date().toISOString(),
+  profile?: JudgeProfile,
 ): string {
   return `${JSON.stringify({
     at,
@@ -48,10 +51,10 @@ export function responseLogLine(
       done: { choice: judgment.done.choice, probabilities: judgment.done.probabilities },
       shape: { choice: judgment.shape.choice, probabilities: judgment.shape.probabilities },
     },
-    score: score(judgment),
+    score: score(judgment, profile),
     usage: Number.isFinite(usage) ? usage : null,
-    floor: floorFor(usage),
-    qualifies: qualifies(judgment, usage),
+    floor: floorFor(usage, profile),
+    qualifies: qualifies(judgment, usage, profile),
   })}\n`;
 }
 
