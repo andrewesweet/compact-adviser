@@ -5,8 +5,9 @@ import tempfile
 import unittest
 from unittest.mock import patch
 from collate import collate
-from label import budget_guard, calibration_guard, parse_response, prompt_for, quota_guard, run_one, validate_label
+from label import CONTEXT, budget_guard, parse_response, prompt_for, quota_guard, run_one, validate_label
 from reduce import reduce_training
+import reuse
 from split import sample_rows, split_sessions
 
 
@@ -123,25 +124,58 @@ class LabelTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 quota_guard(Path("unused"), reserves)
 
-    def test_separate_projection_limit_never_raises_spend_ceiling(self):
+    def test_single_allowance_bounds_spend_and_projection(self):
         results = [{"provider": "fable", "costUsd": 0.38}, {"provider": "astra", "costUsd": 0.06}]
-        budget_guard(results, 96.48, 130, 22, 100)
+        caps = {"fable": 130, "astra": 130}
+        budget_guard(results, 100, caps, 22)
+        with self.assertRaisesRegex(ValueError, "Projected cost"):
+            budget_guard(results, 96.48, caps, 22)
+        with self.assertRaisesRegex(ValueError, "Recorded spend"):
+            budget_guard([{"provider": "fable", "costUsd": 80}], 96.48, caps, 22)
+        calibration = {"fable": 11, "astra": 10}
+        budget_guard(results, 7, calibration, 0)
         with self.assertRaises(ValueError):
-            budget_guard(results, 96.48, 130, 22)
-        with self.assertRaises(ValueError):
-            budget_guard([{"provider": "fable", "costUsd": 80}], 96.48, 130, 22, 1000)
-        calibration_guard(results, 7, {"fable": 11, "astra": 10})
-        with self.assertRaises(ValueError):
-            calibration_guard(results, 1, {"fable": 11, "astra": 10})
+            budget_guard(results, 1, calibration, 0)
+        with self.assertRaisesRegex(ValueError, "call cap"):
+            budget_guard(results * 12, 100, calibration, 0)
+
+    def test_reuse_keeps_source_stratum_and_sampling(self):
+        sessions = [{"session": str(i), "source": {"host": "claude", "stratum": "supervision", "file": f"s{i}.jsonl"},
+                     "eventIds": [str(i)], "stateHashes": [str(i)]} for i in range(3)]
+        checkpoints = [{"id": f"cp{i}", "sessionFile": f"s{i}.jsonl", "stratum": "interactive",
+                        "sampling": "targeted-hard" if i == 1 else "spread"} for i in range(3)]
+        checkpoints[2].pop("sampling")
+        labels = [fixture(id=f"cp{i}") for i in range(3)]
+        Path(".test-tmp").mkdir(exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=".test-tmp") as temporary:
+            old = Path(temporary) / "old"
+            old.mkdir()
+            for name, rows in (("checkpoints", checkpoints), ("labels-fable", labels), ("labels-astra", labels)):
+                (old / f"{name}.jsonl").write_text("".join(json.dumps(row) + "\n" for row in rows))
+            (Path(temporary) / "sessions.json").write_text(json.dumps(sessions))
+            with patch("sys.argv", ["reuse", str(old), str(Path(temporary) / "sessions.json"), str(Path(temporary) / "out"), "--seed", "s"]):
+                reuse.main()
+            rows = {row["id"]: row for row in reuse.jsonl(Path(temporary) / "out" / "checkpoints.jsonl")}
+        self.assertEqual([rows[f"cp{i}"]["sampling"] for i in range(3)], ["spread", "targeted-hard", "spread"])
+        self.assertTrue(all(row["stratum"] == "interactive" for row in rows.values()))
+        self.assertEqual({row["split"] for row in rows.values()}, {"train", "validation", "holdout"})
+
+    def test_rubric_table_enumerates_prompt_context_values(self):
+        readme = (Path(__file__).parents[1] / "README.md").read_text()
+        rubric = readme[readme.index("## Label schema"):readme.index("## Gitignore boundary")]
+        rows = {line.split("|")[1].strip(" `"): line.split("|")[2] for line in rubric.splitlines() if line.startswith("| `")}
+        self.assertEqual({value.strip(" `") for value in rows["context_need"].split("/")}, CONTEXT)
+        self.assertIn("null", rows["safe_to_compact"])
 
     def test_adjudication_prompt_and_budget_stop(self):
         labels = [fixture(), fixture(context_need="tail")]
         rendered = prompt_for("fixture1", "FULL STATE", "RUBRIC", labels)
         self.assertTrue(rendered.endswith("FULL STATE"))
         self.assertIn(json.dumps(labels), rendered)
-        budget_guard([], 96.48, 180, 22)
+        caps = {"fable": 180, "astra": 180}
+        budget_guard([], 96.48, caps, 22)
         with self.assertRaises(ValueError):
-            budget_guard([{"provider": "fable", "costUsd": 1}], 96.48, 180, 22)
+            budget_guard([{"provider": "fable", "costUsd": 1}], 96.48, caps, 22)
 
 
 if __name__ == "__main__":

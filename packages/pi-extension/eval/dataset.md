@@ -78,10 +78,10 @@ For a previously observed corpus, `reuse.py` selects a qualified holdout group b
 
 ```sh
 python3 eval/tools/reuse.py eval/local/previous eval/local/bank/sessions.json \
-  eval/local/reused --seed session-split-v1 --stratum supervision
+  eval/local/reused --seed session-split-v1
 ```
 
-The previous directory needs `checkpoints.jsonl`, `labels-fable.jsonl`, and `labels-astra.jsonl`. The tool retains all phase-and-safety agreements, rather than the first fixed number. Its manifest records the prior-observation caveat. Prior exposure cannot be erased by changing a split label.
+The previous directory needs `checkpoints.jsonl`, `labels-fable.jsonl`, and `labels-astra.jsonl`. The tool retains all phase-and-safety agreements, rather than the first fixed number. Each row keeps its original `stratum` and `sampling` arm, so enriched targeted rows stay reported apart from the spread arm. Its manifest records the prior-observation caveat. Prior exposure cannot be erased by changing a split label.
 
 ## Worksheets and truth
 
@@ -119,13 +119,13 @@ The runner uses Fable high through Claude Code and Astra high through Pi. It rea
 
 Fable dollars come from the CLI. Astra dollars use an explicit assumption of $5 per million input tokens and $25 per million output tokens, including reported reasoning. Cache input receives no discount in that conservative estimate. Provider tokenization differs. These estimates are not invoices.
 
-The default projection reserves $22 for other work and allows at most 180 calls per provider. It projects remaining labels from the greater of the observed mean and the historical per-call allowance. A projection reaching $96.48 stops the runner. Configure the call count and reserve only after recording a revised estimate. If an explicit decision sets a different forecast limit, `--projection-limit` changes that comparison only. Recorded spend plus the reserve still stops at `--allowance`. This distinction does not authorize spending an unused budget margin.
+`--allowance` is the one approved-spend rule: pass the labelling allowance actually authorised. The default projection reserves $22 for other work and allows at most 180 calls per provider. It projects remaining labels from the greater of the observed mean and the historical per-call allowance. Recorded spend plus the reserve, or a projection, reaching the allowance stops the runner. Configure the call count and reserve only after recording a revised estimate. The programme-level ceiling and quota reserve belong in the private manifest and ledger, not in a second runner flag.
 
-An explicitly approved calibration slice can have its own call caps and dollar allowance:
+An explicitly approved calibration slice runs under the same allowance with its own per-provider call caps:
 
 ```sh
 python3 eval/tools/label.py eval/local --ids eval/local/calibration-ids.json --execute \
-  --calibration-cap-usd 7 --fable-cap 11 --astra-cap 10
+  --calibration --allowance 7 --reserve-usd 0 --fable-cap 11 --astra-cap 10
 ```
 
 Calibration is restricted to training rows in the frozen manifest. Caps include existing cached calls. The runner stops after the supplied slice and does not authorize the rest of the exercise. Record measured rates and a new projection before continuing.

@@ -155,32 +155,19 @@ def ledger(root):
     return results
 
 
-def budget_guard(results, allowance, calls_per_provider, reserve_usd, projection_limit=None):
+def budget_guard(results, allowance, caps, reserve_usd):
     if sum(row["costUsd"] for row in results) + reserve_usd >= allowance:
         raise ValueError("Recorded spend plus reserve reaches approved spending ceiling")
     total = reserve_usd
     for provider in PROVIDERS:
         calls = [row for row in results if row["provider"] == provider]
-        if len(calls) > calls_per_provider:
+        if len(calls) > caps[provider]:
             raise ValueError("Provider call cap reached")
         spent = sum(row["costUsd"] for row in calls)
         average = max(29.995645 / 145, spent / len(calls) if calls else 0)
-        total += spent + (calls_per_provider - len(calls)) * average
-    if total >= (allowance if projection_limit is None else projection_limit):
-        raise ValueError(f"Projected cost {total:.2f} reaches approved projection limit")
-
-
-def calibration_guard(results, allowance, caps):
-    projection = 0
-    for provider in PROVIDERS:
-        calls = [row for row in results if row["provider"] == provider]
-        if len(calls) > caps[provider]:
-            raise ValueError("Calibration call cap exceeded")
-        spent = sum(row["costUsd"] for row in calls)
-        mean = spent / len(calls) if calls else 29.995645 / 145
-        projection += spent + (caps[provider] - len(calls)) * mean
-    if sum(row["costUsd"] for row in results) >= allowance or projection > allowance:
-        raise ValueError(f"Calibration projection {projection:.2f} exceeds its allowance")
+        total += spent + (caps[provider] - len(calls)) * average
+    if total >= allowance:
+        raise ValueError(f"Projected cost {total:.2f} reaches approved allowance")
 
 
 def call_directory(root, provider, checkpoint_id, round_id="initial"):
@@ -234,17 +221,11 @@ def main():
     parser.add_argument("--allowance", type=float, default=96.48)
     parser.add_argument("--calls-per-provider", type=int, default=180)
     parser.add_argument("--reserve-usd", type=float, default=22)
-    parser.add_argument("--projection-limit", type=float, help="Separately approved forecast limit; does not raise the actual spending ceiling")
-    parser.add_argument("--calibration-cap-usd", type=float, help="Separately approved calibration only; no automatic continuation")
+    parser.add_argument("--calibration", action="store_true", help="Training-only slice under the per-provider calibration caps; no automatic continuation")
     parser.add_argument("--fable-cap", type=int, default=11, help="Total calibration Fable calls including cached calls")
     parser.add_argument("--astra-cap", type=int, default=10, help="Total calibration Astra calls including cached calls")
     args = parser.parse_args()
-    amounts = [args.allowance, args.reserve_usd]
-    if args.projection_limit is not None:
-        amounts.append(args.projection_limit)
-    if args.calibration_cap_usd is not None:
-        amounts.append(args.calibration_cap_usd)
-    if any(not math.isfinite(value) or value < 0 for value in amounts) or args.allowance <= 0:
+    if any(not math.isfinite(value) or value < 0 for value in (args.allowance, args.reserve_usd)) or args.allowance <= 0:
         raise ValueError("Budget amounts must be finite and non-negative")
     if min(args.calls_per_provider, args.fable_cap, args.astra_cap) <= 0:
         raise ValueError("Call caps must be positive")
@@ -274,8 +255,9 @@ def main():
         print(f"Prepared {len(ids)} identical prompt pairs. No paid calls.")
         return
     reserves = {("claude", "seven_day"): 8, ("claude", "model:fable"): 14, ("codex", "weekly"): 5}
-    caps = {"fable": args.fable_cap, "astra": args.astra_cap}
-    if args.calibration_cap_usd is not None:
+    caps = {provider: args.calls_per_provider for provider in PROVIDERS}
+    if args.calibration:
+        caps = {"fable": args.fable_cap, "astra": args.astra_cap}
         assignments = {row["id"]: row["split"] for row in json.loads((root / "manifest.json").read_text())["rows"]}
         if any(assignments.get(checkpoint_id) != "train" for checkpoint_id in ids):
             raise ValueError("Calibration is restricted to frozen training rows")
@@ -286,19 +268,16 @@ def main():
                 results = ledger(root)
                 count = sum(row["provider"] == provider for row in results)
                 cached = (call_directory(root, provider, checkpoint_id, args.round_id) / "result.json").exists()
-                if args.calibration_cap_usd is not None:
-                    calibration_guard(results, args.calibration_cap_usd, caps)
-                    if not cached and count >= caps[provider]:
+                budget_guard(results, args.allowance, caps, args.reserve_usd)
+                if not cached and count >= caps[provider]:
+                    if args.calibration:
                         continue
-                else:
-                    budget_guard(results, args.allowance, args.calls_per_provider, args.reserve_usd, args.projection_limit)
-                    if not cached and count >= args.calls_per_provider:
-                        raise ValueError("Provider call cap reached")
+                    raise ValueError("Provider call cap reached")
                 result = run_one(root, provider, checkpoint_id, prompts[checkpoint_id], round_id=args.round_id)
                 print(f"{provider}: {result['tokens']} tokens, ${result['costUsd']:.4f}", flush=True)
         quota_guard(root, reserves)
-    if args.calibration_cap_usd is not None:
-        calibration_guard(ledger(root), args.calibration_cap_usd, caps)
+    if args.calibration:
+        budget_guard(ledger(root), args.allowance, caps, args.reserve_usd)
         print("Calibration complete. Record measured projections before any further paid calls.")
     else:
         print("Batch complete. Run collate.py and inspect agreement before another batch.")

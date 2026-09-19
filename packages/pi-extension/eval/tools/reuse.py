@@ -24,7 +24,6 @@ def main():
     parser.add_argument("sessions", type=Path, help="Session metadata from the current offline build")
     parser.add_argument("output", type=Path)
     parser.add_argument("--seed", required=True)
-    parser.add_argument("--stratum", default="supervision")
     args = parser.parse_args()
     checkpoints = jsonl(args.old / "checkpoints.jsonl")
     first = {row["id"]: row for row in jsonl(args.old / "labels-fable.jsonl")}
@@ -45,11 +44,11 @@ def main():
         session = by_file[row["sessionFile"]]["session"]
         group = groups[session]
         split = "holdout" if group == ordered[0] else "validation" if group == ordered[1] else "train"
-        rows.append({**row, "session": session, "group": group, "split": split, "stratum": args.stratum,
-                     "sampling": "spread", "priorObserved": True})
+        rows.append({**row, "session": session, "group": group, "split": split,
+                     "sampling": row.get("sampling", "spread"), "priorObserved": True})
     manifest = {"seed": args.seed, "selection": "minimum seeded hash of eligible linked-session group; next hash validation; remaining train",
                 "caveat": "Prior aggregate outcomes were observed. This is a qualified holdout, not a pristine test corpus.",
-                "groups": ordered, "rows": [{key: row[key] for key in ("id", "session", "group", "split")} for row in rows]}
+                "groups": ordered, "rows": [{key: row[key] for key in ("id", "session", "group", "split", "stratum", "sampling")} for row in rows]}
     save(args.output / "manifest.json", manifest)
     write_jsonl(args.output / "checkpoints.jsonl", rows)
     write_jsonl(args.output / "labels.jsonl", [accepted[row["id"]] for row in rows])
