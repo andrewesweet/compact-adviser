@@ -4,3 +4,4 @@ local/*
 !local/.gitignore
 *.jsonl
 worksheet/
+__pycache__/

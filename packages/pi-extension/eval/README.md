@@ -11,6 +11,8 @@ minimal fake `ExtensionContext`, and production `judge()` / `qualifies()` from
 transcripts, checkpoints, worksheets, gold notes, results, and ablation output
 stay in gitignored `eval/local/`. Do not commit them. Aggregate per-stratum
 metrics for the shipped judge are in [`measured-results.md`](measured-results.md).
+For session-grouped splits, complete redacted worksheets, independent labellers,
+adjudication, and spend guards, see [`dataset.md`](dataset.md).
 
 ## Setup
 
@@ -69,6 +71,11 @@ are ignored when matching live request bodies.
 | Script | What |
 |---|---|
 | `eval/build.ts` | Spread-sample checkpoints and write worksheets |
+| `eval/tools/dataset.ts` | Inventory Claude/Pi sources, build eligible checkpoint banks, and render full redacted worksheets |
+| `eval/tools/split.py` | Freeze stratified session-group splits and spread/difficult sampling arms |
+| `eval/tools/label.py` / `collate.py` | Independent Fable/Astra labels, persistent raw responses, usage guards, and explicit disagreements |
+| `eval/tools/reuse.py` | Reuse all agreed labels with a visibly qualified session holdout |
+| `eval/tools/evidence.py` / `compare.ts` | Audit historical usage and re-gate stored answers without model calls |
 | `eval/build-targeted.ts` | Add minority-class rows marked `sampling=targeted-hard` |
 | `eval/score.ts` | Live Jev through shipped `judge()` / `score()` / `qualifies()`; records both answers and the composed score, gates at a reference usage (default 0.5) |
 | `eval/metrics.py` | Per-class precision/recall vs gold, both gold definitions per stratum, task-boundary recall |
