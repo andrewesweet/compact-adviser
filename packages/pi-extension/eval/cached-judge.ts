@@ -77,18 +77,18 @@ function attempts(directory: string): string[] {
     .filter((root) => existsSync(join(root, "started.json")));
 }
 function accounting(root: string, result: CachedJudgment, limits: ReplayLimits): Accounting {
-  if (result.ok) return {
+  if (!result.ok && !existsSync(join(root, "accounting.json"))) {
+    throw new Error("Failed call lacks an explicit accounting estimate; reconcile before continuing.");
+  }
+  const value: Accounting = result.ok ? {
     estimated: true, costUsd: result.judgment.inputTokens * limits.inputUsdPerMillion / 1e6,
     inputTokens: result.judgment.inputTokens, outputTokens: result.judgment.outputTokens,
     basis: "input-price proxy; output tariff unavailable",
-  };
-  if (!existsSync(join(root, "accounting.json"))) {
-    throw new Error("Failed call lacks an explicit accounting estimate; reconcile before continuing.");
-  }
-  const value = read<Accounting>(join(root, "accounting.json"));
+  } : read<Accounting>(join(root, "accounting.json"));
   if (value.estimated !== true || !Number.isFinite(value.costUsd) || value.costUsd < 0 ||
-    (value.inputTokens !== null && (!Number.isSafeInteger(value.inputTokens) || value.inputTokens < 0))) {
-    throw new Error("Invalid failed-call accounting record.");
+    [value.inputTokens, value.outputTokens].some((tokens) =>
+      tokens === null ? result.ok : !Number.isSafeInteger(tokens) || tokens < 0)) {
+    throw new Error("Invalid call accounting record; reconcile before continuing.");
   }
   return value;
 }
@@ -107,7 +107,7 @@ export function cacheUsage(directory: string, limits: ReplayLimits): { calls: nu
     const cost = accounting(root, result, limits);
     total.inputTokens += cost.inputTokens ?? 0;
     total.outputTokens += cost.outputTokens ?? 0;
-    total.unknownUsageCalls += cost.inputTokens === null ? 1 : 0;
+    total.unknownUsageCalls += cost.inputTokens === null || cost.outputTokens === null ? 1 : 0;
     total.estimatedUsd += cost.costUsd;
   }
   return total;
@@ -153,11 +153,11 @@ export async function cachedJudge(
       if (last.requestHash !== requestHash || readFileSync(join(root, "request.json"), "utf8") !== body) {
         throw new Error("Cached Jev request failed identity checks; do not silently rescore it.");
       }
+      accounting(root, last, limits);
       if (last.ok) {
         if (last.judgment.model !== limits.expectedModel) throw new Error("Jev model identity changed.");
         return last;
       }
-      accounting(root, last, limits);
       continue;
     }
     const usage = cacheUsage(directory, limits);

@@ -7,7 +7,7 @@ import math
 from pathlib import Path
 import random
 from label import private_path, save
-from optimise import SHIPPED, decision, join_rows, jsonl, metrics, sha, strata, truth
+from optimise import SHIPPED, decision, join_rows, jsonl, macro_recall, metrics, sha, strata, truth
 
 
 def rank_metrics(rows, profile, definition="union"):
@@ -51,6 +51,7 @@ def composition(rows):
 
 def table(rows, profiles):
     return {name: {definition: {**metrics(rows, profile, definition),
+                              "macroRecall": macro_recall(rows, profile, definition),
                               "rank": rank_metrics(rows, profile, definition)}
                    for definition in ("union", "product", "contract")}
             for name, profile in profiles.items()}
@@ -75,15 +76,15 @@ def clustered_difference(rows, baseline, candidate, repeats=2000, seed=7):
     if sum(counts.values()) < 2:
         return {"groupsByStratum": counts, "intervals": None, "limitation": caveat}
     rng = random.Random(seed)
-    differences = {name: [] for name in ("precision", "recall", "ap", "auc")}
+    differences = {name: [] for name in ("precision", "recall", "macroRecall", "ap", "auc")}
     for _ in range(repeats):
         sample = []
         for part in groups.values():
             keys = sorted(part)
             for _ in keys:
                 sample.extend(part[rng.choice(keys)])
-        before = {**metrics(sample, baseline), **rank_metrics(sample, baseline)}
-        after = {**metrics(sample, candidate), **rank_metrics(sample, candidate)}
+        before = {**metrics(sample, baseline), **rank_metrics(sample, baseline), "macroRecall": macro_recall(sample, baseline)}
+        after = {**metrics(sample, candidate), **rank_metrics(sample, candidate), "macroRecall": macro_recall(sample, candidate)}
         for name in differences:
             if before[name] is not None and after[name] is not None:
                 differences[name].append(after[name] - before[name])
@@ -95,9 +96,26 @@ def clustered_difference(rows, baseline, candidate, repeats=2000, seed=7):
     }
 
 
-def report(rows, selection, repeats=2000):
+def missing_label_bounds(rows, unlabelled, profile, definition="union"):
+    measured = metrics(rows, profile, definition)
+    missing_hints = measured["unknownHints"] + sum(decision(row, profile)["hint"] for row in unlabelled)
+    missing = measured["unknown"] + len(unlabelled)
+    missed = missing - missing_hints
+    tp, fp, fn = (measured[key] for key in ("tp", "fp", "fn"))
+    def ratio(numerator, denominator):
+        return numerator / denominator if denominator else None
+    return {"uncertainRows": missing, "uncertainHints": missing_hints,
+            "precisionWorst": ratio(tp, tp + fp + missing_hints),
+            "precisionBest": ratio(tp + missing_hints, tp + fp + missing_hints),
+            "recallWorst": ratio(tp, tp + fn + missed),
+            "recallBest": ratio(tp + missing_hints, tp + fn + missing_hints)}
+
+
+def report(rows, selection, repeats=2000, unlabelled=()):
     profiles = {"shipped": SHIPPED, "flat": selection["flatProfile"], "selected": json.loads(selection["profile"])}
     grouped = strata(rows)
+    missing_groups = strata(unlabelled)
+    names = sorted(set(grouped) | set(missing_groups))
     arms = defaultdict(list)
     for row in rows:
         arms[row["sampling"]].append(row)
@@ -107,6 +125,11 @@ def report(rows, selection, repeats=2000):
         sensitivity[name] = table([{**row, "usage": usage} if row.get("usage") is None else row for row in rows], profiles)
     return {
         "composition": {name: composition(group) for name, group in grouped.items()},
+        "labelCoverage": {name: {"accepted": len(grouped.get(name, [])), "unresolvedOrUnpaired": len(missing_groups.get(name, []))} for name in names},
+        "missingLabelBounds": {name: {definition: missing_label_bounds(rows, unlabelled, profile, definition)
+                                      for definition in ("union", "product")} for name, profile in profiles.items()},
+        "missingLabelBoundsByStratum": {name: {policy: missing_label_bounds(grouped.get(name, []), missing_groups.get(name, []), profile)
+                                                for policy, profile in profiles.items()} for name in names},
         "all": table(rows, profiles),
         "successfulJudgmentsOnly": table([row for row in rows if row.get("ok")], profiles),
         "byStratum": {name: table(group, profiles) for name, group in grouped.items()},
@@ -123,6 +146,7 @@ def report(rows, selection, repeats=2000):
             "Sparse checkpoints do not reconstruct stateful cooldown, snooze, dedup or compaction history; these are stateless gate results.",
             "Unknown historical usage uses the strictest floor and is also reported under strict/loose sensitivity assumptions.",
             "Enriched sampling precision is not production precision.",
+            "Missing-label bounds allow every unresolved or truth-unknown row either binary truth; they are sensitivity extremes, not confidence intervals.",
             "Rank statistics exclude failed judgments; end-to-end precision/recall count them as no hint.",
             "This evaluates hint timing, not actual compaction fidelity or autonomous task success.",
         ],
@@ -161,8 +185,13 @@ def main():
     selection = json.loads(args.selection.read_text())
     if selection["checkpointHash"] != sha(args.checkpoints.read_text()):
         raise ValueError("Holdout selection does not match frozen checkpoint bytes")
-    rows = join_rows(jsonl(args.checkpoints), jsonl(args.labels), jsonl(args.results), "holdout")
-    summary = report(rows, selection, args.bootstrap)
+    checkpoints, labels, results = jsonl(args.checkpoints), jsonl(args.labels), jsonl(args.results)
+    rows = join_rows(checkpoints, labels, results, "holdout")
+    accepted_ids = {row["id"] for row in rows}
+    results_by_id = {row["id"]: row for row in results}
+    unlabelled = [{**results_by_id.get(cp["id"], {"ok": False}), "usage": cp.get("contextUsage"),
+                   "stratum": cp["stratum"]} for cp in checkpoints if cp["split"] == "holdout" and cp["id"] not in accepted_ids]
+    summary = report(rows, selection, args.bootstrap, unlabelled)
     save(args.output, summary)
     if args.legacy_output:
         export_legacy(args.legacy_output, rows, summary["profiles"])

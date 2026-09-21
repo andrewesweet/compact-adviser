@@ -34,6 +34,7 @@ def collect(root, round_id="initial", ids=None):
     if ids is None:
         ids = {path.parent.name.split("-")[0] for path in root.glob("raw/*/*/result.json")}
     maps = {provider: {} for provider in PROVIDERS}
+    hashes = {provider: {} for provider in PROVIDERS}
     failures = []
     for checkpoint_id in sorted(ids):
         for provider in PROVIDERS:
@@ -50,8 +51,11 @@ def collect(root, round_id="initial", ids=None):
                     failures.append({"id": checkpoint_id, "provider": provider, "roundId": attempt})
                     continue
                 maps[provider][checkpoint_id] = validate_label(row["label"], checkpoint_id)
+                hashes[provider][checkpoint_id] = prompt_hash
                 break
     complete = sorted(set(maps["fable"]) & set(maps["astra"]))
+    if any(hashes["fable"][key] != hashes["astra"][key] for key in complete):
+        raise ValueError("Providers received different prompt bytes")
     result = collate([(maps["fable"][key], maps["astra"][key]) for key in complete])
     result["unpaired"] = sorted(set(ids) - set(complete))
     result["parseFailures"] = failures

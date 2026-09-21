@@ -4,6 +4,7 @@ This workflow tunes numeric judge profiles against session-grouped data.
 It does not change the runtime judge or send transcripts to an optimisation service.
 The optional runtime profile is described in [Judge profiles](../../../docs/judge-profiles.md).
 All inputs, caches, labels, and per-checkpoint outputs must remain in ignored `eval/local/`.
+The [September 2026 aggregate report](reports/2026-09-profile-search.md) records a negative result with no recommended profile change.
 
 ## Freeze the experiment
 
@@ -78,6 +79,13 @@ Historical failures without response capture require an explicit accounting reco
 
 ## Select once, then unlock holdout
 
+If initial labels disagree, `adjudication.py prepare DIRECTORY MANIFEST PLAN --seed SEED --max-pairs N` prepares a bounded, seeded second pass.
+It requires completed initial attempts and reserves one retry call per provider by default.
+The private plan uses the same budget and quota fields as `cohort.py`.
+Run `cohort.py DIRECTORY DIRECTORY/adjudication/plan.json --execute` only after the initial controller exits.
+The selected pairs receive identical prompts containing the worksheet and both anonymous prior labels.
+Selection uses a seeded identity hash, not disagreement severity or desired truth classes.
+
 Collation reads only the requested partition when given a manifest:
 
 ```sh
@@ -89,8 +97,12 @@ python3 eval/tools/partition_labels.py eval/local/run/checkpoints.jsonl \
   eval/local/source-a/labels.jsonl eval/local/source-b/development-agreement.json
 ```
 
+For a second pass, collate again with `--round-id adjudication` and the generated `adjudication/manifest.json`, using the same split filter.
+`adjudication.py merge INITIAL ADJUDICATED OUTPUT` adds only renewed agreements; unresolved initial evidence remains available.
+Use that merged output in `partition_labels.py`.
+
 Collation records malformed attempts without inventing labels.
-It accepts a valid retry only when its prompt hash matches the initial attempt.
+It rejects different prompt hashes between providers or between an initial attempt and its retry.
 Each provider gets the same frozen prompt bytes.
 Two malformed attempts leave that provider unresolved.
 
@@ -119,6 +131,8 @@ Run `evaluate_profiles.py CHECKPOINTS HOLDOUT_LABELS HOLDOUT_RESULTS SELECTION O
 Its aggregate JSON compares shipped behavior, the validation-selected flat floor, and the selected profile.
 It reports product, contract, and union metrics by stratum and sampling arm.
 Unknown safety is separate from negative truth.
+Missing-label sensitivity assigns unresolved and truth-unknown rows either binary truth to bound precision and recall.
+These are worst/best-case possibilities, not confidence intervals.
 Failed judgments count as no hint in end-to-end recall.
 Rank metrics use successful judgments and handle score ties without depending on checkpoint order.
 

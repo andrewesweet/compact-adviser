@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { type TestContext, test } from "node:test";
 import { cachedJudge, cacheUsage, productionEvaluate } from "../eval/cached-judge.ts";
@@ -94,6 +94,25 @@ test("failed calls retain estimated spend and stop after exactly one retry", asy
   );
   assert.ok(hash);
   assert.ok(!readFileSync(join(root, hash, "result.json"), "utf8").includes("credential"));
+});
+
+test("corrupt persisted usage stops before another paid attempt", async (t) => {
+  const root = directory(t);
+  let calls = 0;
+  const transport = async () => {
+    calls++;
+    return judgment;
+  };
+  await cachedJudge(root, {}, "key", limits, undefined, transport);
+  const path = join(root, readdirSync(root)[0], "result.json");
+  const receipt = JSON.parse(readFileSync(path, "utf8"));
+  receipt.judgment.inputTokens = "invalid";
+  writeFileSync(path, JSON.stringify(receipt));
+  await assert.rejects(
+    cachedJudge(root, { changed: true }, "key", limits, undefined, transport),
+    /accounting/,
+  );
+  assert.equal(calls, 1);
 });
 
 test("the cost guard blocks a retry that would exceed its failure allowance", async (t) => {

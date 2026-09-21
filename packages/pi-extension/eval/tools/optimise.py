@@ -68,7 +68,7 @@ def truth(label, definition):
 
 def metrics(rows, profile, definition="union"):
     counts = dict(tp=0, fp=0, tn=0, fn=0, unknown=0, unknownHints=0, hints=0,
-                  unsafeFp=0, midTaskFp=0, errors=0, boundaryPositive=0, boundaryTp=0)
+                  unsafeFp=0, midTaskFp=0, unsafeMidTaskFp=0, errors=0, boundaryPositive=0, boundaryTp=0)
     for row in rows:
         hint = decision(row, profile)["hint"]
         gold = truth(row["label"], definition)
@@ -76,6 +76,7 @@ def metrics(rows, profile, definition="union"):
         counts["errors"] += not row.get("ok")
         counts["unsafeFp"] += hint and row["label"]["safe_to_compact"] is False
         counts["midTaskFp"] += hint and row["label"]["phase_gold"] == "still_in_progress"
+        counts["unsafeMidTaskFp"] += hint and row["label"]["phase_gold"] == "still_in_progress" and row["label"]["safe_to_compact"] is False
         if gold is None:
             counts["unknown"] += 1
             counts["unknownHints"] += hint
@@ -100,10 +101,10 @@ def strata(rows):
     return dict(grouped)
 
 
-def macro_recall(rows, profile):
-    recalls = [metrics(group, profile)["recall"] for group in strata(rows).values()]
+def macro_recall(rows, profile, definition="union"):
+    recalls = [metrics(group, profile, definition)["recall"] for group in strata(rows).values()]
     available = [value for value in recalls if value is not None]
-    return sum(available) / len(available) if available else 0
+    return sum(available) / len(available) if available else None
 
 
 def eligible(rows, profile, baselines=()):
@@ -129,7 +130,7 @@ def rank(rows, profile, baselines=()):
     measured = metrics(rows, profile)
     valid = eligible(rows, profile, baselines)
     precision = measured["precision"] if measured["precision"] is not None else -1
-    recall = macro_recall(rows, profile)
+    recall = macro_recall(rows, profile) or 0
     return (valid, recall if valid else precision, precision if valid else recall,
             -measured["unsafeFp"], profile == SHIPPED, -len(profile["floors"]),
             -abs(profile["coordinationWeight"] - 0.5), profile["floors"][0][1])

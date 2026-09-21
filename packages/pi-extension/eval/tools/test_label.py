@@ -6,7 +6,9 @@ import tempfile
 import unittest
 from unittest.mock import patch
 from assemble import assemble
-from evaluate_profiles import clustered_difference, rank_metrics
+from adjudication import choose, merge, prepare
+from cohort import run_cohort
+from evaluate_profiles import clustered_difference, missing_label_bounds, rank_metrics
 from collate import collate, collect
 from label import CONTEXT, budget_guard, ledger, parse_response, prompt_for, quota_guard, run_one, validate_label
 from optimise import SHIPPED, family, join_rows, metrics, select
@@ -56,6 +58,61 @@ class LabelTests(unittest.TestCase):
             self.assertEqual(output["unpaired"], ["fixture2"])
             self.assertEqual(len(output["parseFailures"]), 3)
             self.assertEqual(output["accepted"][0]["id"], "fixture1")
+
+    def test_adjudication_preparation_limits_calls_and_preserves_round_prompts(self):
+        Path(".test-tmp").mkdir(exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=".test-tmp") as temporary:
+            root = Path(temporary).resolve()
+            manifest = {"rows": [{"id": "fixture1", "split": "train"}]}
+            (root / "worksheet").mkdir()
+            (root / "worksheet/fixture1.md").write_text("Synthetic worksheet")
+            for provider, label in (("fable", fixture()), ("astra", fixture(phase_gold="still_in_progress"))):
+                directory = root / "raw" / provider / "fixture1"
+                directory.mkdir(parents=True)
+                (directory / "result.json").write_text(json.dumps({"id": "fixture1", "provider": provider, "promptHash": "same", "costUsd": 0.01, "label": label}))
+            plan = {"callsPerProvider": {"fable": 3, "astra": 3}, "reserveUsd": 0,
+                    "forecastAllowanceUsd": 10, "spendingCeilingUsd": 9, "quotaReserves": []}
+            self.assertEqual(prepare(root, manifest, plan, "fixed", 5, 1), 1)
+            actual_plan = json.loads((root / "adjudication/plan.json").read_text())
+            frozen_prompt = json.loads((root / "prompts/fixture1-adjudication.json").read_text())
+            calls = []
+            def fake_call(directory, provider, key, prompt, round_id):
+                calls.append((provider, prompt, round_id))
+                return {"tokens": 1, "costUsd": 0.01}
+            with patch("cohort.quota_guard"), patch("cohort.run_one", side_effect=fake_call):
+                run_cohort(root, actual_plan)
+            self.assertEqual(calls, [(provider, frozen_prompt, "adjudication") for provider in ("fable", "astra")])
+            other = root / "raw/astra/fixture1/result.json"
+            record = json.loads(other.read_text()); record["promptHash"] = "different"
+            other.write_text(json.dumps(record))
+            with self.assertRaisesRegex(ValueError, "different prompt"):
+                collect(root, ids={"fixture1"})
+
+    def test_seeded_adjudication_merge_requires_renewed_agreement(self):
+        initial = collate([(fixture(), fixture(phase_gold="still_in_progress"))])
+        selected = choose(initial["unresolved"], "fixed", 1)
+        self.assertEqual(selected, choose(list(reversed(initial["unresolved"])), "fixed", 1))
+        self.assertEqual(choose(initial["unresolved"], "fixed", 0), [])
+        final = merge(initial, collate([(fixture(), fixture())]))
+        self.assertEqual(final["newlyAccepted"], 1)
+        self.assertEqual(final["unresolved"], [])
+        unresolved = merge(initial, initial)
+        self.assertEqual(len(unresolved["unresolved"]), 1)
+        self.assertEqual(unresolved["accepted"], [])
+        with self.assertRaisesRegex(ValueError, "only reconsider"):
+            merge(collate([]), collate([(fixture(), fixture())]))
+
+    def test_missing_label_bounds_do_not_promote_uncertainty_to_truth(self):
+        yes = {"ok": True, "usage": 0.5, "doneP": {"finished": 1}, "shapeP": {"hands_on": 1}, "label": fixture()}
+        no_hint = {**yes, "doneP": {"finished": 0}}
+        unknown = {**yes, "label": fixture(context_need="unknown", safe_to_compact=None)}
+        result = missing_label_bounds([yes, no_hint, unknown], [no_hint], SHIPPED)
+        self.assertEqual(result["uncertainRows"], 2)
+        self.assertEqual(result["uncertainHints"], 1)
+        self.assertEqual(result["precisionWorst"], 0.5)
+        self.assertEqual(result["precisionBest"], 1)
+        self.assertAlmostEqual(result["recallWorst"], 1 / 3)
+        self.assertAlmostEqual(result["recallBest"], 2 / 3)
 
     def test_fable_usage(self):
         row = parse_response("fable", json.dumps({"result": json.dumps(fixture()), "usage": {"input_tokens": 10, "output_tokens": 2}, "total_cost_usd": 0.1}), "fixture1")
