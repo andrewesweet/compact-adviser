@@ -76,6 +76,7 @@ are ignored when matching live request bodies.
 | `eval/tools/dataset.ts` | Inventory Claude/Pi sources, build eligible checkpoint banks, and render full redacted worksheets |
 | `eval/tools/split.py` | Freeze stratified session-group splits and spread/difficult sampling arms |
 | `eval/tools/label.py` / `collate.py` | Independent Fable/Astra labels, persistent raw responses, usage guards, and explicit disagreements |
+| `eval/score-profile.ts`, `eval/tools/assemble.py` / `optimise.py` / `cohort.py` / `adjudication.py` / `partition_labels.py` / `evaluate_profiles.py` | Cached numeric profile search and locked holdout comparison; see [`optimisation.md`](optimisation.md) |
 | `eval/tools/reuse.py` | Reuse all agreed labels with a visibly qualified session holdout |
 | `eval/tools/evidence.py` / `compare.ts` | Audit historical usage and re-gate stored answers without model calls |
 | `eval/build-targeted.ts` | Add minority-class rows marked `sampling=targeted-hard` |
