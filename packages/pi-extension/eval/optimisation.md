@@ -21,8 +21,12 @@ cd packages/pi-extension
 python3 eval/tools/assemble.py eval/local/run/checkpoints.jsonl \
   eval/local/source-a/checkpoints.jsonl eval/local/source-b/checkpoints.jsonl
 python3 eval/tools/optimise.py freeze eval/local/run/checkpoints.jsonl \
-  eval/local/run/search-plan.json
+  eval/local/run/search-plan.json --protect claude-worker --protect pi-worker
 ```
+
+Each `--protect` names a stratum exactly as it appears in the checkpoint set; the freeze rejects unknown names.
+The plan records these names, and selection enforces the precision constraint only on them.
+The published study protected `claude-worker` and `pi-worker`.
 
 The assembler preserves explicit `contextUsage` values only with `usageSource` provenance.
 Unknown usage stays unknown and uses the strictest floor.
@@ -115,7 +119,7 @@ It is not restricted to the numeric candidate grid.
 Validation selects the final candidate from the training shortlist, the shipped profile, and this flat baseline.
 The objective is macro-average safe-completion recall at at least 95% union precision.
 The union negative class is unfinished work or unsafe compaction.
-The selected candidate must not increase unsafe false positives or reduce worker-stratum precision against either baseline.
+The selected candidate must not increase unsafe false positives or reduce precision in any protected stratum against either baseline.
 If no candidate meets the constraints, the selector retains the shipped profile.
 If no flat baseline meets them, its fallback prioritises defined precision and records that limitation.
 

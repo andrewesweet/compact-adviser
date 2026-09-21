@@ -107,17 +107,17 @@ def macro_recall(rows, profile, definition="union"):
     return sum(available) / len(available) if available else None
 
 
-def eligible(rows, profile, baselines=()):
+def eligible(rows, profile, baselines=(), protected=()):
     measured = metrics(rows, profile)
     if measured["precision"] is None or measured["precision"] < 0.95:
         return False
     if any(measured["unsafeFp"] > metrics(rows, base)["unsafeFp"] for base in baselines):
         return False
     for name, group in strata(rows).items():
-        if "worker" not in name:
+        if name not in protected:
             continue
         current = metrics(group, profile)["precision"]
-        if current is None:  # No worker hint cannot introduce a false positive.
+        if current is None:  # No protected hint cannot introduce a false positive.
             continue
         prior = [metrics(group, base)["precision"] for base in baselines]
         required = max([0.95] + [value for value in prior if value is not None])
@@ -126,9 +126,9 @@ def eligible(rows, profile, baselines=()):
     return True
 
 
-def rank(rows, profile, baselines=()):
+def rank(rows, profile, baselines=(), protected=()):
     measured = metrics(rows, profile)
-    valid = eligible(rows, profile, baselines)
+    valid = eligible(rows, profile, baselines, protected)
     precision = measured["precision"] if measured["precision"] is not None else -1
     recall = macro_recall(rows, profile) or 0
     return (valid, recall if valid else precision, precision if valid else recall,
@@ -136,24 +136,25 @@ def rank(rows, profile, baselines=()):
             -abs(profile["coordinationWeight"] - 0.5), profile["floors"][0][1])
 
 
-def select(train, validation, candidates):
+def select(train, validation, candidates, protected=()):
     if not train or not validation:
         raise ValueError("Training and validation rows are required")
     thresholds = {0, 1} | {decision(row, SHIPPED)["score"] for row in validation if row.get("ok")}
     flat = [{"version": 1, "coordinationWeight": 0.5, "floors": [[0, floor]]} for floor in sorted(thresholds)]
-    best_flat = max(flat, key=lambda profile: rank(validation, profile, [SHIPPED]))
+    best_flat = max(flat, key=lambda profile: rank(validation, profile, [SHIPPED], protected))
     # Fix the shortlist on training only. Each weight retains four candidates.
     shortlist = [SHIPPED, best_flat]
     for weight in WEIGHTS:
         matching = [profile for profile in candidates if profile["coordinationWeight"] == weight]
-        shortlist.extend(sorted(matching, key=lambda profile: rank(train, profile, [SHIPPED]), reverse=True)[:4])
+        shortlist.extend(sorted(matching, key=lambda profile: rank(train, profile, [SHIPPED], protected), reverse=True)[:4])
     shortlist = list({canonical(profile): profile for profile in shortlist}.values())
-    selected = max(shortlist, key=lambda profile: rank(validation, profile, [SHIPPED, best_flat]))
-    if not eligible(validation, selected, [SHIPPED, best_flat]):
+    selected = max(shortlist, key=lambda profile: rank(validation, profile, [SHIPPED, best_flat], protected))
+    if not eligible(validation, selected, [SHIPPED, best_flat], protected):
         selected = SHIPPED
     return {"profile": canonical(selected), "flatProfile": best_flat, "shortlist": shortlist,
-            "flatMeetsConstraints": eligible(validation, best_flat, [SHIPPED]),
-            "selectedMeetsConstraints": eligible(validation, selected, [SHIPPED, best_flat]),
+            "protectedStrata": sorted(protected),
+            "flatMeetsConstraints": eligible(validation, best_flat, [SHIPPED], protected),
+            "selectedMeetsConstraints": eligible(validation, selected, [SHIPPED, best_flat], protected),
             "trainingRows": len(train), "validationRows": len(validation),
             "validation": {name: metrics(validation, profile) for name, profile in
                            (("shipped", SHIPPED), ("flat", best_flat), ("selected", selected))}}
@@ -192,14 +193,21 @@ def main():
     freeze = sub.add_parser("freeze")
     freeze.add_argument("checkpoints", type=Path)
     freeze.add_argument("output", type=Path)
+    freeze.add_argument("--protect", action="append", default=[], metavar="STRATUM",
+                        help="stratum whose precision may not regress against either baseline; repeatable")
     fit = sub.add_parser("select")
     for name in ("checkpoints", "labels", "results", "plan", "output"):
         fit.add_argument(name, type=Path)
     args = parser.parse_args()
     checkpoint_hash = sha(args.checkpoints.read_text())
     if args.command == "freeze":
+        known = {row["stratum"] for row in jsonl(args.checkpoints)}
+        unknown = sorted(set(args.protect) - known)
+        if unknown:
+            raise ValueError(f"Protected strata absent from the checkpoint set: {unknown}")
         save(args.output, {"checkpointHash": checkpoint_hash, "candidates": family(), "flatBaseline": FLAT_BASELINE,
-                           "objective": "macro union recall at >=95% validation precision; no worker precision or unsafe-FP regression",
+                           "protectedStrata": sorted(set(args.protect)),
+                           "objective": "macro union recall at >=95% validation precision; no protected-stratum precision or unsafe-FP regression",
                            "shortlist": "four candidates per weight ranked on training, plus shipped and the validation-selected full flat baseline",
                            "flatFallback": "if no flat satisfies constraints, highest precision with nonempty hints, then macro recall; report failure to meet constraints"})
         print(f"Froze {len(family())} numeric candidates. No model calls.")
@@ -207,9 +215,11 @@ def main():
     plan = json.loads(args.plan.read_text())
     if plan["checkpointHash"] != checkpoint_hash or plan["candidates"] != family() or plan.get("flatBaseline") != FLAT_BASELINE:
         raise ValueError("Checkpoint bytes or search family changed after the plan was frozen")
+    if "protectedStrata" not in plan:
+        raise ValueError("Plan names no protected strata; refreeze with --protect")
     rows = join_rows(jsonl(args.checkpoints), jsonl(args.labels), jsonl(args.results), "development")
     selected = select([row for row in rows if row["split"] == "train"],
-                      [row for row in rows if row["split"] == "validation"], plan["candidates"])
+                      [row for row in rows if row["split"] == "validation"], plan["candidates"], plan["protectedStrata"])
     selected.update(checkpointHash=checkpoint_hash, planHash=sha(args.plan.read_text()),
                     developmentLabelsHash=sha(args.labels.read_text()), developmentResultsHash=sha(args.results.read_text()))
     save(args.output, selected)

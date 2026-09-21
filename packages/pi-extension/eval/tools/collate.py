@@ -68,15 +68,14 @@ def main():
     parser.add_argument("output", type=Path)
     parser.add_argument("--round-id", default="initial")
     parser.add_argument("--manifest", type=Path)
-    parser.add_argument("--split", choices=("development", "holdout", "train", "validation"))
+    parser.add_argument("--split", choices=("development", "holdout"))
     args = parser.parse_args()
     if args.split and not args.manifest:
         raise ValueError("Split filtering requires the frozen manifest")
     ids = None
     if args.manifest:
         rows = json.loads(args.manifest.read_text())["rows"]
-        ids = {row["id"] for row in rows if not args.split or
-               (row["split"] != "holdout" if args.split == "development" else row["split"] == args.split)}
+        ids = {row["id"] for row in rows if not args.split or (row["split"] == "holdout") == (args.split == "holdout")}
     result = collect(args.directory, args.round_id, ids)
     save(args.output, result)
     print(json.dumps({key: result[key] for key in ("pairs", "agreementCounts")}))

@@ -11,7 +11,7 @@ from cohort import run_cohort
 from evaluate_profiles import clustered_difference, missing_label_bounds, rank_metrics
 from collate import collate, collect
 from label import CONTEXT, budget_guard, ledger, parse_response, prompt_for, quota_guard, run_one, validate_label
-from optimise import SHIPPED, family, join_rows, metrics, select
+from optimise import SHIPPED, eligible, family, join_rows, metrics, select
 from reduce import reduce_training
 import reuse
 from split import sample_rows, split_sessions
@@ -234,11 +234,22 @@ class LabelTests(unittest.TestCase):
             def command(script, *args):
                 return subprocess.run([sys.executable, str(tools / script), *map(str, args)], check=True, capture_output=True, text=True)
             cp = root / "checkpoints.jsonl"
-            command("optimise.py", "freeze", cp, root / "plan.json")
+            def rejected(script, *args):
+                completed = subprocess.run([sys.executable, str(tools / script), *map(str, args)], capture_output=True, text=True)
+                self.assertNotEqual(completed.returncode, 0)
+                return completed.stderr
+            self.assertIn("absent", rejected("optimise.py", "freeze", cp, root / "plan.json", "--protect", "missing-stratum"))
+            command("optimise.py", "freeze", cp, root / "plan.json", "--protect", "fixture-worker")
+            self.assertEqual(json.loads((root / "plan.json").read_text())["protectedStrata"], ["fixture-worker"])
+            for split in ("train", "validation"):
+                self.assertIn("invalid choice", rejected("partition_labels.py", cp, root / "rejected.jsonl", split, root / "labels.jsonl"))
+                self.assertIn("invalid choice", rejected("collate.py", root, root / "rejected.json", "--manifest", root / "plan.json", "--split", split))
+            self.assertFalse((root / "rejected.jsonl").exists())
             command("partition_labels.py", cp, root / "development-labels.jsonl", "development", root / "labels.jsonl")
             command("optimise.py", "select", cp, root / "development-labels.jsonl", root / "development.jsonl", root / "plan.json", root / "selection.json")
             command("partition_labels.py", cp, root / "holdout-labels.jsonl", "holdout", root / "labels.jsonl", "--selection", root / "selection.json")
             command("evaluate_profiles.py", cp, root / "holdout-labels.jsonl", root / "holdout.jsonl", root / "selection.json", root / "report.json", "--bootstrap", 20, "--legacy-output", root / "legacy")
+            self.assertEqual(json.loads((root / "selection.json").read_text())["protectedStrata"], ["fixture-worker"])
             report = json.loads((root / "report.json").read_text())
             self.assertEqual(report["all"]["selected"]["union"]["recall"], 1)
             self.assertEqual(report["all"]["selected"]["union"]["precision"], 1)
@@ -279,6 +290,24 @@ class LabelTests(unittest.TestCase):
         checkpoints = [{"id": "holdout1", "group": "g", "stratum": "fixture-worker", "split": "holdout"}]
         with self.assertRaisesRegex(ValueError, "outside"):
             join_rows(checkpoints, [fixture(id="holdout1")], [], "development")
+
+    def test_protected_stratum_constraint_uses_exact_names_not_substrings(self):
+        def row(stratum, finished, positive):
+            return {"stratum": stratum, "ok": True, "usage": 0.5, "doneP": {"finished": finished}, "shapeP": {"hands_on": 1},
+                    "label": fixture(phase_gold="completed_checkpoint" if positive else "still_in_progress")}
+        rows = [row("coding-agent", 0.95, True), row("coding-agent", 0.5, True), row("coding-agent", 0.55, False)]
+        rows += [row("supervisor", 0.95, True) for _ in range(18)]
+        flat = {"version": 1, "coordinationWeight": 0.5, "floors": [[0, 0.3]]}
+        self.assertEqual(metrics(rows, flat)["precision"], 20 / 21)
+        self.assertEqual(metrics(rows[:3], SHIPPED)["precision"], 1)
+        self.assertTrue(eligible(rows, flat, [SHIPPED]))
+        self.assertTrue(eligible(rows, flat, [SHIPPED], ["worker"]))
+        self.assertFalse(eligible(rows, flat, [SHIPPED], ["coding-agent"]))
+        chosen = select(rows, rows, family(), ["coding-agent"])
+        self.assertEqual(chosen["protectedStrata"], ["coding-agent"])
+        self.assertEqual(metrics(rows[:3], json.loads(chosen["profile"]))["fp"], 0)
+        unprotected = select(rows, rows, family())
+        self.assertEqual(metrics(rows[:3], json.loads(unprotected["profile"]))["fp"], 1)
 
     def test_reduction_preserves_validation_holdout_and_pilot(self):
         manifest = {"plan": {"seed": "fixed", "targets": {"coding": {"train": 4, "validation": 1, "holdout": 1}}},

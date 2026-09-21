@@ -15,8 +15,7 @@ def partition_labels(checkpoints, bundles, split):
             key = row["id"]
             if key not in assignments:
                 raise ValueError("Label is absent from the frozen checkpoint set")
-            selected = assignments[key] != "holdout" if split == "development" else assignments[key] == split
-            if not selected:
+            if (assignments[key] == "holdout") != (split == "holdout"):
                 continue
             if key in output:
                 raise ValueError("Duplicate label identity")
@@ -28,7 +27,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("checkpoints", type=Path)
     parser.add_argument("output", type=Path)
-    parser.add_argument("split", choices=("train", "validation", "development", "holdout"))
+    parser.add_argument("split", choices=("development", "holdout"))
     parser.add_argument("labels", nargs="+", type=Path)
     parser.add_argument("--selection", type=Path)
     args = parser.parse_args()
