@@ -239,6 +239,8 @@ class LabelTests(unittest.TestCase):
                 self.assertNotEqual(completed.returncode, 0)
                 return completed.stderr
             self.assertIn("absent", rejected("optimise.py", "freeze", cp, root / "plan.json", "--protect", "missing-stratum"))
+            self.assertIn("--protect", rejected("optimise.py", "freeze", cp, root / "plan.json"))
+            self.assertFalse((root / "plan.json").exists())
             command("optimise.py", "freeze", cp, root / "plan.json", "--protect", "fixture-worker")
             self.assertEqual(json.loads((root / "plan.json").read_text())["protectedStrata"], ["fixture-worker"])
             for split in ("train", "validation"):
@@ -246,6 +248,10 @@ class LabelTests(unittest.TestCase):
                 self.assertIn("invalid choice", rejected("collate.py", root, root / "rejected.json", "--manifest", root / "plan.json", "--split", split))
             self.assertFalse((root / "rejected.jsonl").exists())
             command("partition_labels.py", cp, root / "development-labels.jsonl", "development", root / "labels.jsonl")
+            plan = json.loads((root / "plan.json").read_text())
+            (root / "unprotected-plan.json").write_text(json.dumps({**plan, "protectedStrata": []}))
+            self.assertIn("at least one --protect", rejected("optimise.py", "select", cp, root / "development-labels.jsonl", root / "development.jsonl", root / "unprotected-plan.json", root / "selection.json"))
+            self.assertFalse((root / "selection.json").exists())
             command("optimise.py", "select", cp, root / "development-labels.jsonl", root / "development.jsonl", root / "plan.json", root / "selection.json")
             command("partition_labels.py", cp, root / "holdout-labels.jsonl", "holdout", root / "labels.jsonl", "--selection", root / "selection.json")
             command("evaluate_profiles.py", cp, root / "holdout-labels.jsonl", root / "holdout.jsonl", root / "selection.json", root / "report.json", "--bootstrap", 20, "--legacy-output", root / "legacy")
@@ -277,7 +283,7 @@ class LabelTests(unittest.TestCase):
                     "doneP": {"finished": 0.6 if positive else 0.1}, "shapeP": {"hands_on": 0},
                     "label": fixture(phase_gold="completed_checkpoint" if positive else "still_in_progress")}
         rows = [row(True), row(True), row(False)]
-        chosen = select(rows, rows, family())
+        chosen = select(rows, rows, family(), ["fixture-worker"])
         selected = json.loads(chosen["profile"])
         self.assertTrue(chosen["selectedMeetsConstraints"])
         self.assertTrue(chosen["flatMeetsConstraints"])
@@ -306,8 +312,10 @@ class LabelTests(unittest.TestCase):
         chosen = select(rows, rows, family(), ["coding-agent"])
         self.assertEqual(chosen["protectedStrata"], ["coding-agent"])
         self.assertEqual(metrics(rows[:3], json.loads(chosen["profile"]))["fp"], 0)
-        unprotected = select(rows, rows, family())
+        unprotected = select(rows, rows, family(), ["worker"])
         self.assertEqual(metrics(rows[:3], json.loads(unprotected["profile"]))["fp"], 1)
+        with self.assertRaisesRegex(ValueError, "cannot enforce"):
+            select(rows, rows, family(), [])
 
     def test_reduction_preserves_validation_holdout_and_pilot(self):
         manifest = {"plan": {"seed": "fixed", "targets": {"coding": {"train": 4, "validation": 1, "holdout": 1}}},

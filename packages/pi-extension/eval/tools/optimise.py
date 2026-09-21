@@ -136,9 +136,11 @@ def rank(rows, profile, baselines=(), protected=()):
             -abs(profile["coordinationWeight"] - 0.5), profile["floors"][0][1])
 
 
-def select(train, validation, candidates, protected=()):
+def select(train, validation, candidates, protected):
     if not train or not validation:
         raise ValueError("Training and validation rows are required")
+    if not protected:
+        raise ValueError("The frozen objective promises no protected-stratum precision regression; an empty protected list cannot enforce it")
     thresholds = {0, 1} | {decision(row, SHIPPED)["score"] for row in validation if row.get("ok")}
     flat = [{"version": 1, "coordinationWeight": 0.5, "floors": [[0, floor]]} for floor in sorted(thresholds)]
     best_flat = max(flat, key=lambda profile: rank(validation, profile, [SHIPPED], protected))
@@ -193,8 +195,8 @@ def main():
     freeze = sub.add_parser("freeze")
     freeze.add_argument("checkpoints", type=Path)
     freeze.add_argument("output", type=Path)
-    freeze.add_argument("--protect", action="append", default=[], metavar="STRATUM",
-                        help="stratum whose precision may not regress against either baseline; repeatable")
+    freeze.add_argument("--protect", action="append", required=True, metavar="STRATUM",
+                        help="stratum whose precision may not regress against either baseline; repeatable, at least one")
     fit = sub.add_parser("select")
     for name in ("checkpoints", "labels", "results", "plan", "output"):
         fit.add_argument(name, type=Path)
@@ -215,8 +217,8 @@ def main():
     plan = json.loads(args.plan.read_text())
     if plan["checkpointHash"] != checkpoint_hash or plan["candidates"] != family() or plan.get("flatBaseline") != FLAT_BASELINE:
         raise ValueError("Checkpoint bytes or search family changed after the plan was frozen")
-    if "protectedStrata" not in plan:
-        raise ValueError("Plan names no protected strata; refreeze with --protect")
+    if not plan.get("protectedStrata"):
+        raise ValueError("The frozen objective promises no protected-stratum precision regression; refreeze with at least one --protect")
     rows = join_rows(jsonl(args.checkpoints), jsonl(args.labels), jsonl(args.results), "development")
     selected = select([row for row in rows if row["split"] == "train"],
                       [row for row in rows if row["split"] == "validation"], plan["candidates"], plan["protectedStrata"])

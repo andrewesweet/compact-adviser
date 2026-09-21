@@ -24,7 +24,7 @@ python3 eval/tools/optimise.py freeze eval/local/run/checkpoints.jsonl \
   eval/local/run/search-plan.json --protect claude-worker --protect pi-worker
 ```
 
-Each `--protect` names a stratum exactly as it appears in the checkpoint set; the freeze rejects unknown names.
+Each `--protect` names a stratum exactly as it appears in the checkpoint set; the freeze requires at least one and rejects unknown names.
 The plan records these names, and selection enforces the precision constraint only on them.
 The published study protected `claude-worker` and `pi-worker`.
 
