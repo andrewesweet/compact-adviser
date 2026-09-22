@@ -257,7 +257,9 @@ function launch() {
 async function ask(prompt) {
   const requestsBefore = modelRequests;
   type(prompt);
-  const deadline = Date.now() + 15000;
+  // A cold `SessionStart` hook holds the composer before it reads what the terminal buffered,
+  // so this window covers that startup cost as well as the keystrokes themselves.
+  const deadline = Date.now() + 60000;
   while (Date.now() < deadline) {
     // Like the trust dialog, the composer can paint typed text before it accepts Enter.
     key("Enter");
