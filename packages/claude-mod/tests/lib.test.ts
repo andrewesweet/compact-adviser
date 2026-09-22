@@ -338,10 +338,16 @@ describe("judge input", () => {
           bash("s1", "echo hi > docs/out.md"),
           bash("s2", "cat in.txt | tee copy.txt"),
           bash("s3", "sed -i -e 's/a/b/' notes.md"),
+          bash("s4", "echo hi >| clobber.txt"),
         ],
       },
     ]);
-    expect(view.state.savedArtifacts).toEqual(["docs/out.md", "copy.txt", "notes.md"]);
+    expect(view.state.savedArtifacts).toEqual([
+      "docs/out.md",
+      "copy.txt",
+      "notes.md",
+      "clobber.txt",
+    ]);
   });
 
   test("a Bash command that writes nothing adds no artifact, and sensitive or failed writes stay out", () => {

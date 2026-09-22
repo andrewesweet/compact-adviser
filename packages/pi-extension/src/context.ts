@@ -317,7 +317,7 @@ function collectShellWrittenPaths(
       continue;
     }
     if (
-      (token.text === ">" || token.text === ">>") &&
+      (token.text === ">" || token.text === ">>" || token.text === ">|") &&
       (!token.io || token.io === "1") &&
       targetWord
     ) {

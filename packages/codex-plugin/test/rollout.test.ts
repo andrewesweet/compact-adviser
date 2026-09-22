@@ -357,11 +357,14 @@ test("shell redirection, tee, and sed -i in a shell call feed the saved artifact
     toolOutput("done", "call_2"),
     shell("sed -i -e 's/a/b/' notes.md", "call_3"),
     toolOutput("done", "call_3"),
+    shell("echo hi >| clobber.txt", "call_4"),
+    toolOutput("done", "call_4"),
   ]);
   assert.deepEqual(snapshot(rollout.messages).state.savedArtifacts, [
     "src/gen.ts",
     "copy.txt",
     "notes.md",
+    "clobber.txt",
   ]);
 });
 
@@ -387,6 +390,8 @@ test("an argv array without a shell wrapper adds no saved artifact", () => {
     toolOutput("done", "call_1"),
     toolCall("local_shell", JSON.stringify({ command: ["tee", "copy.txt"] }), "call_2"),
     toolOutput("done", "call_2"),
+    toolCall("shell", JSON.stringify({ command: ["python3", "-c", "print(len(x) > 0)"] }), "call_3"),
+    toolOutput("done", "call_3"),
   ]);
   assert.deepEqual(snapshot(rollout.messages).state.savedArtifacts, []);
 });

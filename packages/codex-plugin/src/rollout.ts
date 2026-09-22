@@ -176,6 +176,9 @@ function argumentPaths(argumentsJson: string): string[] {
 /** Codex tool calls that carry a shell command line in their `command` argument. */
 const SHELL_TOOLS = new Set(["shell", "local_shell", "unified_exec"]);
 
+/** Interpreters whose `-c`/`-lc` argument is a shell line. */
+const SHELL_BINARIES = new Set(["sh", "bash", "zsh", "dash", "ksh", "ash"]);
+
 /** The shell command line a shell tool call carries: a string command as written, or the script a
  *  `bash -lc`/`-c` wrapper names. Argv words are already-split literals, never a shell line. */
 function shellCommandText(argumentsJson: string): string {
@@ -190,7 +193,11 @@ function shellCommandText(argumentsJson: string): string {
   if (typeof command === "string") return command;
   if (!Array.isArray(command)) return "";
   const parts = command.filter((part): part is string => typeof part === "string");
-  const flag = parts.findIndex((part) => part === "-c" || part === "-lc");
+  const flag = parts.findIndex((part, at) => {
+    if (part !== "-c" && part !== "-lc") return false;
+    const before = parts[at - 1] ?? "";
+    return SHELL_BINARIES.has(before.slice(before.lastIndexOf("/") + 1));
+  });
   if (flag === -1 || flag + 1 >= parts.length) return "";
   return parts[flag + 1] as string;
 }
@@ -454,7 +461,7 @@ function collectShellWrittenPaths(
       continue;
     }
     if (
-      (token.text === ">" || token.text === ">>") &&
+      (token.text === ">" || token.text === ">>" || token.text === ">|") &&
       (!token.io || token.io === "1") &&
       targetWord
     ) {

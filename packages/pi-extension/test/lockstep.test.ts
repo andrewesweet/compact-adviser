@@ -141,6 +141,7 @@ test("every package extracts the same written paths from the same shell commands
   const commands = [
     "echo hello > out.txt",
     "echo hello >> log.md",
+    "echo hi >| clobber.txt",
     "cat in.txt | tee copy.txt",
     "sed -i 's/foo/bar/g' notes.md",
     "sed -i.bak -e 's/a/b/' file.txt",
@@ -175,6 +176,7 @@ test("every package extracts the same written paths from the same shell commands
       assert.deepEqual(got, first, `${JSON.stringify(command)} extractor ${i + 1}`);
   }
   assert.deepEqual(claudeSnapshot.shellWrittenPaths("echo hi > out.txt"), ["out.txt"]);
+  assert.deepEqual(claudeSnapshot.shellWrittenPaths("echo hi >| clobber.txt"), ["clobber.txt"]);
   assert.deepEqual(claudeSnapshot.shellWrittenPaths("cat <<EOF\nfake > nope.txt\nEOF"), []);
   assert.deepEqual(claudeSnapshot.shellWrittenPaths("sed -i '' -e 's/a/b/' bsd.txt"), ["bsd.txt"]);
   assert.deepEqual(claudeSnapshot.shellWrittenPaths("sed -i '' 's/a/b/' bsd.txt"), ["bsd.txt"]);

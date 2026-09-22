@@ -185,7 +185,8 @@ test("a compact-adviser.json read keeps mode diagnostics and drops the saved key
 
 test("bash redirection, tee, and sed -i feed the saved-artifact list", (t) => {
   const h = harness(t);
-  for (const name of ["docs-out.md", "copy.txt", "notes.md"]) writeFileSync(join(h.dir, name), "x");
+  for (const name of ["docs-out.md", "copy.txt", "notes.md", "clobber.txt"])
+    writeFileSync(join(h.dir, name), "x");
   const bash = (id: string, command: string) => ({
     ...assistant(""),
     content: [{ type: "toolCall" as const, id, name: "bash", arguments: { command } }],
@@ -197,8 +198,15 @@ test("bash redirection, tee, and sed -i feed the saved-artifact list", (t) => {
   h.sm.appendMessage(toolResult("ok", "bash", "b2"));
   h.sm.appendMessage(bash("b3", "sed -i -e 's/a/b/' notes.md"));
   h.sm.appendMessage(toolResult("ok", "bash", "b3"));
+  h.sm.appendMessage(bash("b4", "echo hi >| clobber.txt"));
+  h.sm.appendMessage(toolResult("ok", "bash", "b4"));
   const view = snapshot(h.ctx);
-  assert.deepEqual(view.state.savedArtifacts, ["docs-out.md", "copy.txt", "notes.md"]);
+  assert.deepEqual(view.state.savedArtifacts, [
+    "docs-out.md",
+    "copy.txt",
+    "notes.md",
+    "clobber.txt",
+  ]);
 });
 
 test("a bash command that writes nothing, or fails, adds no saved artifact", (t) => {

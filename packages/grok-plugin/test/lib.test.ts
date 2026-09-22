@@ -83,17 +83,24 @@ test("shell redirection, tee, and sed -i feed the saved-artifact list", () => {
             name: "run_terminal_command",
             arguments: JSON.stringify({ command: "sed -i -e 's/a/b/' notes.md" }),
           },
+          {
+            id: "call-4",
+            name: "run_terminal_command",
+            arguments: JSON.stringify({ command: "echo hi >| clobber.txt" }),
+          },
         ],
       }),
       line({ type: "tool_result", tool_call_id: "call-1", content: "ok" }),
       line({ type: "tool_result", tool_call_id: "call-2", content: "ok" }),
       line({ type: "tool_result", tool_call_id: "call-3", content: "ok" }),
+      line({ type: "tool_result", tool_call_id: "call-4", content: "ok" }),
     ].join("\n"),
   );
   assert.deepEqual(snapshot(messages).state.savedArtifacts, [
     "docs/out.md",
     "copy.txt",
     "notes.md",
+    "clobber.txt",
   ]);
 });
 
