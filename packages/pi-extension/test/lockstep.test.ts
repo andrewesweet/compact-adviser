@@ -143,6 +143,8 @@ test("every package extracts the same written paths from the same shell commands
     "echo hello >> log.md",
     "echo hi >| clobber.txt",
     "cat in.txt | tee copy.txt",
+    "tee -- out.txt",
+    "tee -- -weird.txt",
     "sed -i 's/foo/bar/g' notes.md",
     "sed -i.bak -e 's/a/b/' file.txt",
     "sed -i.bak 's/a/b/' file.txt",
@@ -201,6 +203,8 @@ test("every package extracts the same written paths from the same shell commands
   ]);
   assert.deepEqual(claudeSnapshot.shellWrittenPaths("tee out.txt 2>/dev/null"), ["out.txt"]);
   assert.deepEqual(claudeSnapshot.shellWrittenPaths("cat x | tee log.txt 2>&1"), ["log.txt"]);
+  assert.deepEqual(claudeSnapshot.shellWrittenPaths("tee -- out.txt"), ["out.txt"]);
+  assert.deepEqual(claudeSnapshot.shellWrittenPaths("tee -- -weird.txt"), []);
   assert.deepEqual(claudeSnapshot.shellWrittenPaths("sed -i -e 's/a/b/' f.txt 2>/dev/null"), [
     "f.txt",
   ]);

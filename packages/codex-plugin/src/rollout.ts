@@ -345,13 +345,8 @@ function addShellWrittenPath(word: ShellWord, paths: string[]): void {
 }
 
 function shellTeeTargets(args: readonly ShellWord[], paths: string[]): void {
-  let operands = false;
   for (const arg of args) {
-    if (!operands && arg.text === "--") {
-      operands = true;
-      continue;
-    }
-    if (!operands && arg.text.startsWith("-")) continue;
+    if (arg.text.startsWith("-")) continue;
     addShellWrittenPath(arg, paths);
   }
 }
