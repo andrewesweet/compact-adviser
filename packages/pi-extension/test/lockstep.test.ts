@@ -144,6 +144,7 @@ test("every package extracts the same written paths from the same shell commands
     "cat in.txt | tee copy.txt",
     "sed -i 's/foo/bar/g' notes.md",
     "sed -i.bak -e 's/a/b/' file.txt",
+    "sed -i '' -e 's/a/b/' bsd.txt",
     "cat <<EOF\nfake > nope.txt\nEOF",
     'echo hi > "$TARGET"',
     "make 2> err.log",
@@ -165,6 +166,7 @@ test("every package extracts the same written paths from the same shell commands
   }
   assert.deepEqual(claudeSnapshot.shellWrittenPaths("echo hi > out.txt"), ["out.txt"]);
   assert.deepEqual(claudeSnapshot.shellWrittenPaths("cat <<EOF\nfake > nope.txt\nEOF"), []);
+  assert.deepEqual(claudeSnapshot.shellWrittenPaths("sed -i '' -e 's/a/b/' bsd.txt"), ["bsd.txt"]);
 });
 
 test("every package scrubs owned settings fields and known key values the same way", () => {

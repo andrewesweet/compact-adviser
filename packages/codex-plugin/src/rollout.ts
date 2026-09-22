@@ -176,8 +176,8 @@ function argumentPaths(argumentsJson: string): string[] {
 /** Codex tool calls that carry a shell command line in their `command` argument. */
 const SHELL_TOOLS = new Set(["shell", "local_shell", "unified_exec"]);
 
-/** The shell command line a shell tool call carries, under each plausible reading: the argv
- *  Codex joins and runs, plus the script a `bash -lc`/`-c` wrapper names. */
+/** The shell command line a shell tool call carries: a string command as written, or the script a
+ *  `bash -lc`/`-c` wrapper names. Argv words are already-split literals, never a shell line. */
 function shellCommandText(argumentsJson: string): string {
   let parsed: unknown;
   try {
@@ -190,10 +190,9 @@ function shellCommandText(argumentsJson: string): string {
   if (typeof command === "string") return command;
   if (!Array.isArray(command)) return "";
   const parts = command.filter((part): part is string => typeof part === "string");
-  const readings = [parts.join(" ")];
   const flag = parts.findIndex((part) => part === "-c" || part === "-lc");
-  if (flag !== -1 && flag + 1 < parts.length) readings.push(parts[flag + 1] as string);
-  return readings.join("\n");
+  if (flag === -1 || flag + 1 >= parts.length) return "";
+  return parts[flag + 1] as string;
 }
 
 interface ShellWord {
@@ -349,7 +348,12 @@ function shellSedTargets(args: readonly ShellWord[], paths: string[]): void {
   let i = 0;
   while (i < args.length) {
     const arg = args[i];
-    if (!arg || !arg.text.startsWith("-") || arg.text === "-") break;
+    if (!arg) break;
+    if (arg.text === "" && inPlace) {
+      i++;
+      continue;
+    }
+    if (!arg.text.startsWith("-") || arg.text === "-") break;
     if (
       arg.text === "-i" ||
       (!arg.text.startsWith("--") && arg.text.startsWith("-i")) ||

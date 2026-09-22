@@ -381,6 +381,16 @@ test("a shell call that writes nothing, or fails, adds no saved artifact", () =>
   assert.deepEqual(snapshot(rollout.messages).state.savedArtifacts, []);
 });
 
+test("an argv array without a shell wrapper adds no saved artifact", () => {
+  const rollout = mapRecords([
+    toolCall("shell", JSON.stringify({ command: ["rg", "=>", "src"] }), "call_1"),
+    toolOutput("done", "call_1"),
+    toolCall("local_shell", JSON.stringify({ command: ["tee", "copy.txt"] }), "call_2"),
+    toolOutput("done", "call_2"),
+  ]);
+  assert.deepEqual(snapshot(rollout.messages).state.savedArtifacts, []);
+});
+
 test("readRollout reads a file, and answers empty for one it cannot read", () => {
   const lab = makeLab();
   try {

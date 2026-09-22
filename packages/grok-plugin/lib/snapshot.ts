@@ -197,7 +197,12 @@ function shellSedTargets(args: readonly ShellWord[], paths: string[]): void {
   let i = 0;
   while (i < args.length) {
     const arg = args[i];
-    if (!arg || !arg.text.startsWith("-") || arg.text === "-") break;
+    if (!arg) break;
+    if (arg.text === "" && inPlace) {
+      i++;
+      continue;
+    }
+    if (!arg.text.startsWith("-") || arg.text === "-") break;
     if (
       arg.text === "-i" ||
       (!arg.text.startsWith("--") && arg.text.startsWith("-i")) ||
