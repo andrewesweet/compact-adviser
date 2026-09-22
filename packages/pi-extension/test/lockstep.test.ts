@@ -177,6 +177,9 @@ test("every package extracts the same written paths from the same shell commands
     "[[ a > b ]] && echo hi",
     "[[ a > b ]]; echo hi > real.txt",
     "echo $((count > 0)) > stat.txt",
+    'for v in 1.0 2.0; do [[ "$v" > "1.2" ]] && echo newer; done',
+    'while read l; do [[ "$l" > lim.txt ]] && echo; done < in',
+    "{ [[ a > b.txt ]]; }",
   ];
   const extractors = [
     claudeSnapshot.shellWrittenPaths,
@@ -235,6 +238,15 @@ test("every package extracts the same written paths from the same shell commands
   assert.deepEqual(claudeSnapshot.shellWrittenPaths("echo $((count > 0)) > stat.txt"), [
     "stat.txt",
   ]);
+  assert.deepEqual(
+    claudeSnapshot.shellWrittenPaths('for v in 1.0 2.0; do [[ "$v" > "1.2" ]] && echo newer; done'),
+    [],
+  );
+  assert.deepEqual(
+    claudeSnapshot.shellWrittenPaths('while read l; do [[ "$l" > lim.txt ]] && echo; done < in'),
+    [],
+  );
+  assert.deepEqual(claudeSnapshot.shellWrittenPaths("{ [[ a > b.txt ]]; }"), []);
   const longQuoted = `python3 -c 'payload${"\n".repeat(5000)}' > report.txt`;
   for (const extract of extractors) assert.deepEqual(extract(longQuoted), ["report.txt"]);
 });

@@ -131,7 +131,20 @@ const SHELL_PREFIX_WORDS = new Set([
 ]);
 const SHELL_DEV_PATHS = new Set(["/dev/null", "/dev/stdout", "/dev/stderr", "/dev/stdin"]);
 /** Bash reserved words that may precede a command, so `[[` after them still opens a conditional. */
-const SHELL_COND_INTRO_WORDS = new Set(["if", "then", "else", "elif", "while", "until", "!"]);
+const SHELL_COND_INTRO_WORDS = new Set([
+  "if",
+  "then",
+  "else",
+  "elif",
+  "while",
+  "until",
+  "do",
+  "done",
+  "fi",
+  "{",
+  "}",
+  "!",
+]);
 
 function shellOperatorAt(line: string, at: number): string | undefined {
   for (const op of SHELL_OPERATORS) if (line.startsWith(op, at)) return op;
