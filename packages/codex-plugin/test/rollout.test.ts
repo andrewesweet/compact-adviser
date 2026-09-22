@@ -390,7 +390,11 @@ test("an argv array without a shell wrapper adds no saved artifact", () => {
     toolOutput("done", "call_1"),
     toolCall("local_shell", JSON.stringify({ command: ["tee", "copy.txt"] }), "call_2"),
     toolOutput("done", "call_2"),
-    toolCall("shell", JSON.stringify({ command: ["python3", "-c", "print(len(x) > 0)"] }), "call_3"),
+    toolCall(
+      "shell",
+      JSON.stringify({ command: ["python3", "-c", "print(len(x) > 0)"] }),
+      "call_3",
+    ),
     toolOutput("done", "call_3"),
   ]);
   assert.deepEqual(snapshot(rollout.messages).state.savedArtifacts, []);
