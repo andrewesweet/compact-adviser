@@ -299,8 +299,8 @@ function collectShellWrittenPaths(
 }
 
 /**
- * The files one shell command line writes through output redirection (`>` and
- * `>>`), `tee`, or in-place `sed`. The command text is data — nothing is
+ * The files one shell command line writes through output redirection (`>`,
+ * `>>` and `>|`), `tee`, or in-place `sed`. The command text is data — nothing is
  * executed or expanded. Parsing is conservative: heredoc bodies never yield a
  * path, a word the shell would have expanded or globbed names no file, and any
  * construct the parser cannot read with confidence yields nothing.
