@@ -85,12 +85,16 @@ function shellOperatorAt(line: string, at: number): string | undefined {
   return undefined;
 }
 
-/** Shell-lex one line into words and operators; quoted text stays literal. */
-function tokenizeShellLine(line: string): ShellToken[] {
+/**
+ * Shell-lex one line into words and operators; quoted text stays literal.
+ * `open` reports a quote the line never closes, so the caller can keep reading.
+ */
+function tokenizeShellLine(line: string): { tokens: ShellToken[]; open: boolean } {
   const tokens: ShellToken[] = [];
   let word = "";
   let quoted = false;
   let hasWord = false;
+  let open = false;
   let i = 0;
   const flush = () => {
     if (hasWord) tokens.push({ kind: "word", word: { text: word, quoted } });
@@ -102,6 +106,7 @@ function tokenizeShellLine(line: string): ShellToken[] {
     const ch = line.charAt(i);
     if (ch === "'" || ch === '"') {
       let j = i + 1;
+      let closed = false;
       while (j < line.length) {
         if (ch === '"' && line.charAt(j) === "\\" && j + 1 < line.length) {
           word += line.charAt(j + 1);
@@ -110,11 +115,13 @@ function tokenizeShellLine(line: string): ShellToken[] {
         }
         if (line.charAt(j) === ch) {
           j++;
+          closed = true;
           break;
         }
         word += line.charAt(j);
         j++;
       }
+      if (!closed) open = true;
       quoted = true;
       hasWord = true;
       i = j;
@@ -149,7 +156,7 @@ function tokenizeShellLine(line: string): ShellToken[] {
     i++;
   }
   flush();
-  return tokens;
+  return { tokens, open };
 }
 
 /** A word becomes a written path only when it confidently names one real file. */
@@ -312,6 +319,7 @@ function collectShellWrittenPaths(
 export function shellWrittenPaths(command: string): string[] {
   const paths: string[] = [];
   const heredocs: { delimiter: string; dashed: boolean }[] = [];
+  let buffer = "";
   for (const line of command.split("\n")) {
     const pending = heredocs[0];
     if (pending) {
@@ -319,7 +327,11 @@ export function shellWrittenPaths(command: string): string[] {
       if (candidate === pending.delimiter) heredocs.shift();
       continue;
     }
-    collectShellWrittenPaths(tokenizeShellLine(line), paths, heredocs);
+    buffer = buffer ? `${buffer}\n${line}` : line;
+    const lexed = tokenizeShellLine(buffer);
+    if (lexed.open) continue;
+    collectShellWrittenPaths(lexed.tokens, paths, heredocs);
+    buffer = "";
   }
   return paths;
 }

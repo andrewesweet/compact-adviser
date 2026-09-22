@@ -165,6 +165,8 @@ test("every package extracts the same written paths from the same shell commands
     "mkdir -p x && echo hi > x/a.md && sed -i s/a/b/ x/a.md",
     "tee out.txt 2>/dev/null",
     "2>err.log tee out.txt",
+    'git commit -m "fix parser\n\nbefore > after.txt was wrong"',
+    "echo 'multi\nline > fake.txt\nend'",
   ];
   const extractors = [
     claudeSnapshot.shellWrittenPaths,
@@ -200,6 +202,15 @@ test("every package extracts the same written paths from the same shell commands
     "f.txt",
   ]);
   assert.deepEqual(claudeSnapshot.shellWrittenPaths("2>err.log tee out.txt"), ["out.txt"]);
+  assert.deepEqual(
+    claudeSnapshot.shellWrittenPaths('git commit -m "fix parser\n\nbefore > after.txt was wrong"'),
+    [],
+  );
+  assert.deepEqual(claudeSnapshot.shellWrittenPaths("echo 'multi\nline > fake.txt\nend'"), []);
+  assert.deepEqual(claudeSnapshot.shellWrittenPaths("echo one > a.txt\necho two > b.txt"), [
+    "a.txt",
+    "b.txt",
+  ]);
 });
 
 test("every package scrubs owned settings fields and known key values the same way", () => {
