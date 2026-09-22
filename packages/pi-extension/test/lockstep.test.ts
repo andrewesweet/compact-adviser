@@ -163,6 +163,8 @@ test("every package extracts the same written paths from the same shell commands
     "echo done > /dev/null",
     "npm test",
     "mkdir -p x && echo hi > x/a.md && sed -i s/a/b/ x/a.md",
+    "tee out.txt 2>/dev/null",
+    "2>err.log tee out.txt",
   ];
   const extractors = [
     claudeSnapshot.shellWrittenPaths,
@@ -192,6 +194,12 @@ test("every package extracts the same written paths from the same shell commands
   assert.deepEqual(claudeSnapshot.shellWrittenPaths("sed -i --expression='s/x/y/' f.txt"), [
     "f.txt",
   ]);
+  assert.deepEqual(claudeSnapshot.shellWrittenPaths("tee out.txt 2>/dev/null"), ["out.txt"]);
+  assert.deepEqual(claudeSnapshot.shellWrittenPaths("cat x | tee log.txt 2>&1"), ["log.txt"]);
+  assert.deepEqual(claudeSnapshot.shellWrittenPaths("sed -i -e 's/a/b/' f.txt 2>/dev/null"), [
+    "f.txt",
+  ]);
+  assert.deepEqual(claudeSnapshot.shellWrittenPaths("2>err.log tee out.txt"), ["out.txt"]);
 });
 
 test("every package scrubs owned settings fields and known key values the same way", () => {

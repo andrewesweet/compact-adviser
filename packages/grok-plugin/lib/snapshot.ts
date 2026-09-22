@@ -152,7 +152,9 @@ function tokenizeShellLine(line: string): ShellToken[] {
     const op = shellOperatorAt(line, i);
     if (op) {
       // Digits attached directly to a redirection are its fd, not a word.
-      const io = hasWord && /^\d+$/.test(word) ? word : undefined;
+      const io =
+        hasWord && !SHELL_CONTROL_OPS.has(op) && /^\d+$/.test(word) ? word : undefined;
+      if (io) hasWord = false;
       flush();
       tokens.push({ kind: "op", text: op, ...(io ? { io } : {}) });
       i += op.length;
