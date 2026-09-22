@@ -355,7 +355,7 @@ test("shell redirection, tee, and sed -i in a shell call feed the saved artifact
     toolOutput("done", "call_1"),
     shell("cat in.txt | tee copy.txt", "call_2"),
     toolOutput("done", "call_2"),
-    shell("sed -i 's/a/b/' notes.md", "call_3"),
+    shell("sed -i -e 's/a/b/' notes.md", "call_3"),
     toolOutput("done", "call_3"),
   ]);
   assert.deepEqual(snapshot(rollout.messages).state.savedArtifacts, [

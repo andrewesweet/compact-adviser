@@ -144,7 +144,17 @@ test("every package extracts the same written paths from the same shell commands
     "cat in.txt | tee copy.txt",
     "sed -i 's/foo/bar/g' notes.md",
     "sed -i.bak -e 's/a/b/' file.txt",
+    "sed -i.bak 's/a/b/' file.txt",
+    "sed --in-place=.bak 's/a/b/' file.txt",
+    "sed --in-place -e 's/a/b/' file.txt",
     "sed -i '' -e 's/a/b/' bsd.txt",
+    "sed -i '' 's/a/b/' bsd.txt",
+    "sed -i .bak -e 's/x/y/' f.txt",
+    "sed -i .bak f.txt",
+    "sed -ni -e 's/x/y/p' f.txt",
+    "sed -Ei -e 's/x/y/' f.txt",
+    "sed -ie 's/x/y/' f.txt",
+    "sed -i --expression='s/x/y/' f.txt",
     "cat <<EOF\nfake > nope.txt\nEOF",
     'echo hi > "$TARGET"',
     "make 2> err.log",
@@ -167,6 +177,19 @@ test("every package extracts the same written paths from the same shell commands
   assert.deepEqual(claudeSnapshot.shellWrittenPaths("echo hi > out.txt"), ["out.txt"]);
   assert.deepEqual(claudeSnapshot.shellWrittenPaths("cat <<EOF\nfake > nope.txt\nEOF"), []);
   assert.deepEqual(claudeSnapshot.shellWrittenPaths("sed -i '' -e 's/a/b/' bsd.txt"), ["bsd.txt"]);
+  assert.deepEqual(claudeSnapshot.shellWrittenPaths("sed -i '' 's/a/b/' bsd.txt"), ["bsd.txt"]);
+  assert.deepEqual(claudeSnapshot.shellWrittenPaths("sed -i.bak 's/a/b/' file.txt"), ["file.txt"]);
+  assert.deepEqual(claudeSnapshot.shellWrittenPaths("sed --in-place=.bak 's/a/b/' file.txt"), [
+    "file.txt",
+  ]);
+  assert.deepEqual(claudeSnapshot.shellWrittenPaths("sed -i .bak -e 's/x/y/' f.txt"), ["f.txt"]);
+  assert.deepEqual(claudeSnapshot.shellWrittenPaths("sed -i .bak f.txt"), []);
+  assert.deepEqual(claudeSnapshot.shellWrittenPaths("sed -i 's/foo/bar/g' notes.md"), []);
+  assert.deepEqual(claudeSnapshot.shellWrittenPaths("sed -ni -e 's/x/y/p' f.txt"), ["f.txt"]);
+  assert.deepEqual(claudeSnapshot.shellWrittenPaths("sed -ie 's/x/y/' f.txt"), ["f.txt"]);
+  assert.deepEqual(claudeSnapshot.shellWrittenPaths("sed -i --expression='s/x/y/' f.txt"), [
+    "f.txt",
+  ]);
 });
 
 test("every package scrubs owned settings fields and known key values the same way", () => {

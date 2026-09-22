@@ -195,7 +195,7 @@ test("bash redirection, tee, and sed -i feed the saved-artifact list", (t) => {
   h.sm.appendMessage(toolResult("ok", "bash", "b1"));
   h.sm.appendMessage(bash("b2", "cat in.txt | tee copy.txt"));
   h.sm.appendMessage(toolResult("ok", "bash", "b2"));
-  h.sm.appendMessage(bash("b3", "sed -i 's/a/b/' notes.md"));
+  h.sm.appendMessage(bash("b3", "sed -i -e 's/a/b/' notes.md"));
   h.sm.appendMessage(toolResult("ok", "bash", "b3"));
   const view = snapshot(h.ctx);
   assert.deepEqual(view.state.savedArtifacts, ["docs-out.md", "copy.txt", "notes.md"]);

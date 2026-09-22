@@ -95,8 +95,6 @@ const SHELL_PREFIX_WORDS = new Set([
   "xargs",
 ]);
 const SHELL_DEV_PATHS = new Set(["/dev/null", "/dev/stdout", "/dev/stderr", "/dev/stdin"]);
-/** sed options that consume the following word as their value. */
-const SED_VALUE_FLAGS = new Set(["-e", "-f", "-l", "--expression", "--file", "--line-length"]);
 
 function shellOperatorAt(line: string, at: number): string | undefined {
   for (const op of SHELL_OPERATORS) if (line.startsWith(op, at)) return op;
@@ -194,37 +192,66 @@ function shellTeeTargets(args: readonly ShellWord[], paths: string[]): void {
 function shellSedTargets(args: readonly ShellWord[], paths: string[]): void {
   let inPlace = false;
   let scriptGiven = false;
+  let suffixAmbiguous = false;
+  let bareInPlace = false;
   let i = 0;
   while (i < args.length) {
     const arg = args[i];
     if (!arg) break;
-    if (arg.text === "" && inPlace) {
+    const text = arg.text;
+    const afterBare = bareInPlace;
+    bareInPlace = false;
+    if (afterBare && (text === "" || !text.startsWith("-"))) {
+      suffixAmbiguous = text !== "";
       i++;
       continue;
     }
-    if (!arg.text.startsWith("-") || arg.text === "-") break;
-    if (
-      arg.text === "-i" ||
-      (!arg.text.startsWith("--") && arg.text.startsWith("-i")) ||
-      arg.text === "--in-place" ||
-      arg.text.startsWith("--in-place=")
-    ) {
-      inPlace = true;
-    } else if (arg.text.startsWith("--expression=") || arg.text.startsWith("--file=")) {
-      scriptGiven = true;
-    } else if (SED_VALUE_FLAGS.has(arg.text) && i + 1 < args.length) {
-      if (
-        arg.text === "-e" ||
-        arg.text === "-f" ||
-        arg.text === "--expression" ||
-        arg.text === "--file"
-      )
-        scriptGiven = true;
+    if (text === "--") {
       i++;
+      break;
+    }
+    if (!text.startsWith("-") || text === "-") break;
+    if (!text.startsWith("--")) {
+      let consumesNext = false;
+      for (let k = 1; k < text.length; k++) {
+        const letter = text[k];
+        const rest = text.slice(k + 1);
+        if (letter === "e" || letter === "f") {
+          scriptGiven = true;
+          consumesNext = rest === "";
+          break;
+        }
+        if (letter === "i") {
+          inPlace = true;
+          bareInPlace = rest === "";
+          break;
+        }
+        if (letter === "l") {
+          consumesNext = rest === "";
+          break;
+        }
+      }
+      i += consumesNext && i + 1 < args.length ? 2 : 1;
+      continue;
+    }
+    if (text === "--in-place") {
+      inPlace = true;
+      bareInPlace = true;
+    } else if (text.startsWith("--in-place=")) {
+      inPlace = true;
+    } else if (text === "--expression" || text === "--file") {
+      scriptGiven = true;
+      if (i + 1 < args.length) i++;
+    } else if (text.startsWith("--expression=") || text.startsWith("--file=")) {
+      scriptGiven = true;
+    } else if (text === "--line-length") {
+      if (i + 1 < args.length) i++;
     }
     i++;
   }
   if (!inPlace) return;
+  // A non-empty word after a bare -i is a BSD suffix or a GNU script; without -e/-f, undecidable.
+  if (suffixAmbiguous && !scriptGiven) return;
   const operands = args.slice(i).filter((arg) => arg.text !== "");
   // Without -e/-f the first operand is the sed script; with them, all are files.
   const files = scriptGiven ? operands : operands.slice(1);

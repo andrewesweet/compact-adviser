@@ -337,7 +337,7 @@ describe("judge input", () => {
         toolUses: [
           bash("s1", "echo hi > docs/out.md"),
           bash("s2", "cat in.txt | tee copy.txt"),
-          bash("s3", "sed -i 's/a/b/' notes.md"),
+          bash("s3", "sed -i -e 's/a/b/' notes.md"),
         ],
       },
     ]);

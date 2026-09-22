@@ -81,7 +81,7 @@ test("shell redirection, tee, and sed -i feed the saved-artifact list", () => {
           {
             id: "call-3",
             name: "run_terminal_command",
-            arguments: JSON.stringify({ command: "sed -i 's/a/b/' notes.md" }),
+            arguments: JSON.stringify({ command: "sed -i -e 's/a/b/' notes.md" }),
           },
         ],
       }),
