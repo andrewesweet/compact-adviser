@@ -172,6 +172,11 @@ test("every package extracts the same written paths from the same shell commands
     "echo one > a.txt\necho two > b.txt",
     'git commit -m "fix parser\n\nbefore > after.txt was wrong"',
     "echo 'multi\nline > fake.txt\nend'",
+    "if (( count > 0 )); then echo yes; fi",
+    'if [[ "$ver" > "1.2" ]]; then echo newer; fi',
+    "[[ a > b ]] && echo hi",
+    "[[ a > b ]]; echo hi > real.txt",
+    "echo $((count > 0)) > stat.txt",
   ];
   const extractors = [
     claudeSnapshot.shellWrittenPaths,
@@ -217,6 +222,18 @@ test("every package extracts the same written paths from the same shell commands
   assert.deepEqual(claudeSnapshot.shellWrittenPaths("echo one > a.txt\necho two > b.txt"), [
     "a.txt",
     "b.txt",
+  ]);
+  assert.deepEqual(claudeSnapshot.shellWrittenPaths("if (( count > 0 )); then echo yes; fi"), []);
+  assert.deepEqual(
+    claudeSnapshot.shellWrittenPaths('if [[ "$ver" > "1.2" ]]; then echo newer; fi'),
+    [],
+  );
+  assert.deepEqual(claudeSnapshot.shellWrittenPaths("[[ a > b ]] && echo hi"), []);
+  assert.deepEqual(claudeSnapshot.shellWrittenPaths("[[ a > b ]]; echo hi > real.txt"), [
+    "real.txt",
+  ]);
+  assert.deepEqual(claudeSnapshot.shellWrittenPaths("echo $((count > 0)) > stat.txt"), [
+    "stat.txt",
   ]);
   const longQuoted = `python3 -c 'payload${"\n".repeat(5000)}' > report.txt`;
   for (const extract of extractors) assert.deepEqual(extract(longQuoted), ["report.txt"]);

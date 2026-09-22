@@ -66,6 +66,7 @@ interface ShellCarry {
 }
 
 const SHELL_OPERATORS = [
+  "((",
   ";;&",
   ";;",
   ";&",
@@ -88,7 +89,20 @@ const SHELL_OPERATORS = [
   "(",
   ")",
 ];
-const SHELL_CONTROL_OPS = new Set([";;&", ";;", ";&", "||", "&&", "|&", "|", "&", ";", "(", ")"]);
+const SHELL_CONTROL_OPS = new Set([
+  "((",
+  ";;&",
+  ";;",
+  ";&",
+  "||",
+  "&&",
+  "|&",
+  "|",
+  "&",
+  ";",
+  "(",
+  ")",
+]);
 /** Words that may stand before a command name without hiding it. */
 const SHELL_PREFIX_WORDS = new Set([
   "sudo",
@@ -102,6 +116,8 @@ const SHELL_PREFIX_WORDS = new Set([
   "xargs",
 ]);
 const SHELL_DEV_PATHS = new Set(["/dev/null", "/dev/stdout", "/dev/stderr", "/dev/stdin"]);
+/** Bash reserved words that may precede a command, so `[[` after them still opens a conditional. */
+const SHELL_COND_INTRO_WORDS = new Set(["if", "then", "else", "elif", "while", "until", "!"]);
 
 function shellOperatorAt(line: string, at: number): string | undefined {
   for (const op of SHELL_OPERATORS) if (line.startsWith(op, at)) return op;
@@ -299,16 +315,38 @@ function collectShellWrittenPaths(
   heredocs: { delimiter: string; dashed: boolean }[],
 ): void {
   let segment: ShellWord[] = [];
+  let cond = false;
+  let arith = false;
+  let arithDepth = 0;
+  let suppress = false;
   for (let i = 0; i < tokens.length; i++) {
     const token = tokens[i];
     if (!token) break;
     if (token.kind === "word") {
+      const text = token.word.text;
+      if (
+        !cond &&
+        text === "[[" &&
+        (segment.length === 0 || segment.every((w) => SHELL_COND_INTRO_WORDS.has(w.text)))
+      ) {
+        cond = true;
+        suppress = true;
+      } else if (cond && text === "]]") {
+        cond = false;
+      }
       segment.push(token.word);
       continue;
     }
     if (SHELL_CONTROL_OPS.has(token.text)) {
-      matchShellWriters(segment, paths);
+      if (token.text === "((" && !arith) arith = true;
+      else if (token.text === "(" && arith) arithDepth++;
+      else if (token.text === ")" && arith) {
+        if (arithDepth > 0) arithDepth--;
+        else arith = false;
+      }
+      if (!suppress) matchShellWriters(segment, paths);
       segment = [];
+      suppress = cond || arith;
       continue;
     }
     const target = tokens[i + 1];
@@ -322,6 +360,8 @@ function collectShellWrittenPaths(
       continue;
     }
     if (
+      !cond &&
+      !arith &&
       (token.text === ">" || token.text === ">>" || token.text === ">|") &&
       (!token.io || token.io === "1") &&
       targetWord
@@ -330,15 +370,17 @@ function collectShellWrittenPaths(
     }
     if (targetWord) i++;
   }
-  matchShellWriters(segment, paths);
+  if (!suppress) matchShellWriters(segment, paths);
 }
 
 /**
  * The files one shell command line writes through output redirection (`>`,
  * `>>` and `>|`), `tee`, or in-place `sed`. The command text is data — nothing is
  * executed or expanded. Parsing is conservative: heredoc bodies never yield a
- * path, a word the shell would have expanded or globbed names no file, and any
- * construct the parser cannot read with confidence yields nothing.
+ * path, `>` and `<` inside `[[ ]]` conditionals and `(( ))` arithmetic are
+ * comparisons rather than redirections, a word the shell would have expanded or
+ * globbed names no file, and any construct the parser cannot read with
+ * confidence yields nothing.
  *
  * Copied verbatim into every host package; lockstep.test.ts keeps them in step.
  */
