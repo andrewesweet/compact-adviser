@@ -165,6 +165,9 @@ test("every package extracts the same written paths from the same shell commands
     "mkdir -p x && echo hi > x/a.md && sed -i s/a/b/ x/a.md",
     "tee out.txt 2>/dev/null",
     "2>err.log tee out.txt",
+    "cat x | tee log.txt 2>&1",
+    "sed -i -e 's/a/b/' f.txt 2>/dev/null",
+    "echo one > a.txt\necho two > b.txt",
     'git commit -m "fix parser\n\nbefore > after.txt was wrong"',
     "echo 'multi\nline > fake.txt\nend'",
   ];
