@@ -33,8 +33,16 @@ export const RECENT_TAIL_MESSAGES = 64;
 /** Per-tool-result byte cap inside the recent tail; long results are middle-truncated. */
 export const TOOL_RESULT_BUDGET = 512;
 export const SUMMARY_PREFIX = "This session is being continued from a previous conversation";
-/** Codex tool calls that write workspace files; `apply_patch` is the freeform one. */
-const WRITE_TOOLS = new Set(["apply_patch", "write_file", "edit_file"]);
+/** Codex tool calls that write workspace files; `apply_patch` is the freeform one, and a shell
+ *  call's paths are the writes its own command line makes, already extracted in rollout.ts. */
+const WRITE_TOOLS = new Set([
+  "apply_patch",
+  "write_file",
+  "edit_file",
+  "shell",
+  "local_shell",
+  "unified_exec",
+]);
 
 function clip(text: string, limit: number): { text: string; truncated: boolean } {
   const encoded = new TextEncoder().encode(text);

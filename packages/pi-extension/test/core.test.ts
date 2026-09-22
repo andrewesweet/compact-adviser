@@ -183,6 +183,44 @@ test("a compact-adviser.json read keeps mode diagnostics and drops the saved key
   assert.deepEqual(view.state.savedArtifacts, ["notes-[REDACTED].md"]);
 });
 
+test("bash redirection, tee, and sed -i feed the saved-artifact list", (t) => {
+  const h = harness(t);
+  for (const name of ["docs-out.md", "copy.txt", "notes.md"]) writeFileSync(join(h.dir, name), "x");
+  const bash = (id: string, command: string) => ({
+    ...assistant(""),
+    content: [{ type: "toolCall" as const, id, name: "bash", arguments: { command } }],
+    stopReason: "toolUse" as const,
+  });
+  h.sm.appendMessage(bash("b1", "echo hi > docs-out.md"));
+  h.sm.appendMessage(toolResult("ok", "bash", "b1"));
+  h.sm.appendMessage(bash("b2", "cat in.txt | tee copy.txt"));
+  h.sm.appendMessage(toolResult("ok", "bash", "b2"));
+  h.sm.appendMessage(bash("b3", "sed -i 's/a/b/' notes.md"));
+  h.sm.appendMessage(toolResult("ok", "bash", "b3"));
+  const view = snapshot(h.ctx);
+  assert.deepEqual(view.state.savedArtifacts, ["docs-out.md", "copy.txt", "notes.md"]);
+});
+
+test("a bash command that writes nothing, or fails, adds no saved artifact", (t) => {
+  const h = harness(t);
+  writeFileSync(join(h.dir, "failed.txt"), "x");
+  const bash = (id: string, command: string) => ({
+    ...assistant(""),
+    content: [{ type: "toolCall" as const, id, name: "bash", arguments: { command } }],
+    stopReason: "toolUse" as const,
+  });
+  h.sm.appendMessage(bash("b1", "npm test"));
+  h.sm.appendMessage(toolResult("ok", "bash", "b1"));
+  h.sm.appendMessage(bash("b2", "cat <<EOF\nfake > nope.txt\nEOF"));
+  h.sm.appendMessage(toolResult("ok", "bash", "b2"));
+  h.sm.appendMessage(bash("b3", 'echo hi >> "$TARGET"'));
+  h.sm.appendMessage(toolResult("ok", "bash", "b3"));
+  h.sm.appendMessage(bash("b4", "echo hi > failed.txt"));
+  h.sm.appendMessage({ ...toolResult("boom", "bash", "b4"), isError: true });
+  const view = snapshot(h.ctx);
+  assert.deepEqual(view.state.savedArtifacts, []);
+});
+
 test("recent tail keeps the last 64 messages and still clips to byte budgets", (t) => {
   const h = harness(t);
   const markers = Array.from({ length: 80 }, (_, i) => `unique-tail-${i}`);

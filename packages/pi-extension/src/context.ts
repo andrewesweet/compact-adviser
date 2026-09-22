@@ -55,6 +55,271 @@ export function clipMiddle(text: string, limit: number): { text: string; truncat
 const sensitivePath =
   /(?:^|[\\/])(?:\.env(?:\.[^\\/]*)?|auth\.json|id_(?:rsa|ed25519)|[^\\/]*\.(?:pem|key))$/i;
 
+/** Pi's shell tool, whose `command` argument may write files itself. */
+const SHELL_TOOLS = new Set(["bash"]);
+
+interface ShellWord {
+  text: string;
+  /** Some part came from quotes or an escape, so spaces are literal characters. */
+  quoted: boolean;
+}
+
+type ShellToken =
+  | { kind: "word"; word: ShellWord }
+  | {
+      kind: "op";
+      text: string /** Digits attached directly before the operator: an fd. */;
+      io?: string;
+    };
+
+const SHELL_OPERATORS = [
+  ";;&",
+  ";;",
+  ";&",
+  "||",
+  "&&",
+  "|&",
+  "<<-",
+  "<<<",
+  "<<",
+  "<>",
+  ">&",
+  "<&",
+  ">|",
+  ">>",
+  "<",
+  ">",
+  "|",
+  "&",
+  ";",
+  "(",
+  ")",
+];
+const SHELL_CONTROL_OPS = new Set([";;&", ";;", ";&", "||", "&&", "|&", "|", "&", ";", "(", ")"]);
+/** Words that may stand before a command name without hiding it. */
+const SHELL_PREFIX_WORDS = new Set([
+  "sudo",
+  "command",
+  "exec",
+  "nohup",
+  "time",
+  "env",
+  "nice",
+  "stdbuf",
+  "xargs",
+]);
+const SHELL_DEV_PATHS = new Set(["/dev/null", "/dev/stdout", "/dev/stderr", "/dev/stdin"]);
+/** sed options that consume the following word as their value. */
+const SED_VALUE_FLAGS = new Set(["-e", "-f", "-l", "--expression", "--file", "--line-length"]);
+
+function shellOperatorAt(line: string, at: number): string | undefined {
+  for (const op of SHELL_OPERATORS) if (line.startsWith(op, at)) return op;
+  return undefined;
+}
+
+/** Shell-lex one line into words and operators; quoted text stays literal. */
+function tokenizeShellLine(line: string): ShellToken[] {
+  const tokens: ShellToken[] = [];
+  let word = "";
+  let quoted = false;
+  let hasWord = false;
+  let i = 0;
+  const flush = () => {
+    if (hasWord) tokens.push({ kind: "word", word: { text: word, quoted } });
+    word = "";
+    quoted = false;
+    hasWord = false;
+  };
+  while (i < line.length) {
+    const ch = line.charAt(i);
+    if (ch === "'" || ch === '"') {
+      let j = i + 1;
+      while (j < line.length) {
+        if (ch === '"' && line.charAt(j) === "\\" && j + 1 < line.length) {
+          word += line.charAt(j + 1);
+          j += 2;
+          continue;
+        }
+        if (line.charAt(j) === ch) {
+          j++;
+          break;
+        }
+        word += line.charAt(j);
+        j++;
+      }
+      quoted = true;
+      hasWord = true;
+      i = j;
+      continue;
+    }
+    if (ch === "\\" && i + 1 < line.length) {
+      word += line.charAt(i + 1);
+      quoted = true;
+      hasWord = true;
+      i += 2;
+      continue;
+    }
+    if (/\s/.test(ch)) {
+      flush();
+      i++;
+      continue;
+    }
+    if (ch === "#" && !hasWord) break;
+    const op = shellOperatorAt(line, i);
+    if (op) {
+      // Digits attached directly to a redirection are its fd, not a word.
+      const io = hasWord && /^\d+$/.test(word) ? word : undefined;
+      flush();
+      tokens.push({ kind: "op", text: op, ...(io ? { io } : {}) });
+      i += op.length;
+      continue;
+    }
+    word += ch;
+    hasWord = true;
+    i++;
+  }
+  flush();
+  return tokens;
+}
+
+/** A word becomes a written path only when it confidently names one real file. */
+function addShellWrittenPath(word: ShellWord, paths: string[]): void {
+  const path = word.text;
+  if (!path || path === "." || path === ".." || path.startsWith("-")) return;
+  if (SHELL_DEV_PATHS.has(path) || path.startsWith("/dev/fd/")) return;
+  // The shell would have expanded these; the literal text names no single file.
+  if (/[$`*?{}[\]()<>;&'"|\\~]/.test(path)) return;
+  if (!word.quoted && /\s/.test(path)) return;
+  paths.push(path);
+}
+
+function shellTeeTargets(args: readonly ShellWord[], paths: string[]): void {
+  let operands = false;
+  for (const arg of args) {
+    if (!operands && arg.text === "--") {
+      operands = true;
+      continue;
+    }
+    if (!operands && arg.text.startsWith("-")) continue;
+    addShellWrittenPath(arg, paths);
+  }
+}
+
+function shellSedTargets(args: readonly ShellWord[], paths: string[]): void {
+  let inPlace = false;
+  let scriptGiven = false;
+  let i = 0;
+  while (i < args.length) {
+    const arg = args[i];
+    if (!arg || !arg.text.startsWith("-") || arg.text === "-") break;
+    if (
+      arg.text === "-i" ||
+      (!arg.text.startsWith("--") && arg.text.startsWith("-i")) ||
+      arg.text === "--in-place" ||
+      arg.text.startsWith("--in-place=")
+    ) {
+      inPlace = true;
+    } else if (arg.text.startsWith("--expression=") || arg.text.startsWith("--file=")) {
+      scriptGiven = true;
+    } else if (SED_VALUE_FLAGS.has(arg.text) && i + 1 < args.length) {
+      if (
+        arg.text === "-e" ||
+        arg.text === "-f" ||
+        arg.text === "--expression" ||
+        arg.text === "--file"
+      )
+        scriptGiven = true;
+      i++;
+    }
+    i++;
+  }
+  if (!inPlace) return;
+  const operands = args.slice(i).filter((arg) => arg.text !== "");
+  // Without -e/-f the first operand is the sed script; with them, all are files.
+  const files = scriptGiven ? operands : operands.slice(1);
+  for (const file of files) addShellWrittenPath(file, paths);
+}
+
+function matchShellWriters(words: readonly ShellWord[], paths: string[]): void {
+  let start = 0;
+  while (start < words.length) {
+    const word = words[start];
+    if (!word) break;
+    if (SHELL_PREFIX_WORDS.has(word.text) || /^[A-Za-z_][A-Za-z0-9_]*=/.test(word.text)) {
+      start++;
+      continue;
+    }
+    break;
+  }
+  const first = words[start]?.text;
+  if (first === "tee") shellTeeTargets(words.slice(start + 1), paths);
+  else if (first === "sed") shellSedTargets(words.slice(start + 1), paths);
+}
+
+function collectShellWrittenPaths(
+  tokens: readonly ShellToken[],
+  paths: string[],
+  heredocs: { delimiter: string; dashed: boolean }[],
+): void {
+  let segment: ShellWord[] = [];
+  for (let i = 0; i < tokens.length; i++) {
+    const token = tokens[i];
+    if (!token) break;
+    if (token.kind === "word") {
+      segment.push(token.word);
+      continue;
+    }
+    if (SHELL_CONTROL_OPS.has(token.text)) {
+      matchShellWriters(segment, paths);
+      segment = [];
+      continue;
+    }
+    const target = tokens[i + 1];
+    const targetWord = target?.kind === "word" ? target.word : undefined;
+    if (token.text === "<<" || token.text === "<<-") {
+      if (targetWord) {
+        if (targetWord.text)
+          heredocs.push({ delimiter: targetWord.text, dashed: token.text === "<<-" });
+        i++;
+      }
+      continue;
+    }
+    if (
+      (token.text === ">" || token.text === ">>") &&
+      (!token.io || token.io === "1") &&
+      targetWord
+    ) {
+      addShellWrittenPath(targetWord, paths);
+    }
+    if (targetWord) i++;
+  }
+  matchShellWriters(segment, paths);
+}
+
+/**
+ * The files one shell command line writes through output redirection (`>` and
+ * `>>`), `tee`, or in-place `sed`. The command text is data — nothing is
+ * executed or expanded. Parsing is conservative: heredoc bodies never yield a
+ * path, a word the shell would have expanded or globbed names no file, and any
+ * construct the parser cannot read with confidence yields nothing.
+ *
+ * Copied verbatim into every host package; lockstep.test.ts keeps them in step.
+ */
+export function shellWrittenPaths(command: string): string[] {
+  const paths: string[] = [];
+  const heredocs: { delimiter: string; dashed: boolean }[] = [];
+  for (const line of command.split("\n")) {
+    const pending = heredocs[0];
+    if (pending) {
+      const candidate = pending.dashed ? line.replace(/^\t+/, "") : line;
+      if (candidate === pending.delimiter) heredocs.shift();
+      continue;
+    }
+    collectShellWrittenPaths(tokenizeShellLine(line), paths, heredocs);
+  }
+  return paths;
+}
+
 function fileExists(path: string): boolean {
   try {
     return statSync(path).isFile();
@@ -145,6 +410,7 @@ export function snapshot(ctx: ExtensionContext, secrets: readonly (string | unde
   const messages = buildSessionContext(ctx.sessionManager.buildContextEntries()).messages;
   const conversationTokens = messages.reduce((sum, m) => sum + estimateTokens(m), 0);
   const paths = new Map<string, { path: string; name: string }>();
+  const commands = new Map<string, string>();
   const artifacts = new Set<string>();
   let hasImages = false,
     redacted = false,
@@ -158,14 +424,26 @@ export function snapshot(ctx: ExtensionContext, secrets: readonly (string | unde
   let summary = "";
   for (const m of messages) {
     if (m.role === "assistant")
-      for (const c of m.content)
-        if (c.type === "toolCall" && typeof c.arguments.path === "string")
+      for (const c of m.content) {
+        if (c.type !== "toolCall") continue;
+        if (typeof c.arguments.path === "string")
           paths.set(c.id, { path: c.arguments.path, name: c.name });
+        if (SHELL_TOOLS.has(c.name) && typeof c.arguments.command === "string")
+          commands.set(c.id, c.arguments.command);
+      }
     if (m.role === "toolResult") {
       const p = paths.get(m.toolCallId);
       if (p && !m.isError && ["write", "edit"].includes(p.name) && !sensitivePath.test(p.path)) {
         const full = resolve(ctx.cwd, p.path);
         if (fileExists(full)) artifacts.add(p.path);
+      }
+      const command = commands.get(m.toolCallId);
+      if (command && !m.isError) {
+        for (const written of shellWrittenPaths(command)) {
+          if (sensitivePath.test(written)) continue;
+          const full = resolve(ctx.cwd, written);
+          if (fileExists(full)) artifacts.add(written);
+        }
       }
     }
   }

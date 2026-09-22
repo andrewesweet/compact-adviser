@@ -15,6 +15,7 @@ import {
   readSettings,
   SettingsError,
 } from "../lib/config.ts";
+import { snapshot } from "../lib/snapshot.ts";
 import { HINT, itemsLine, parsePayload, statusLine } from "../lib/statusline.ts";
 import { type Verdict, verdictApplies } from "../lib/store.ts";
 import { parseChatHistory, userText } from "../lib/transcript.ts";
@@ -57,6 +58,71 @@ test("the transcript reader pairs tool results with the calls that made them", (
     ],
   );
   assert.deepEqual(messages[1]?.toolUses[0]?.input, { file_path: "/repo/a.ts" });
+});
+
+test("shell redirection, tee, and sed -i feed the saved-artifact list", () => {
+  const { messages } = parseChatHistory(
+    [
+      line({ type: "system", content: "You are Grok." }),
+      line({
+        type: "assistant",
+        content: "Saving the findings.",
+        tool_calls: [
+          {
+            id: "call-1",
+            name: "run_terminal_command",
+            arguments: JSON.stringify({ command: "echo hi > docs/out.md" }),
+          },
+          {
+            id: "call-2",
+            name: "run_terminal_command",
+            arguments: JSON.stringify({ command: "cat in.txt | tee copy.txt" }),
+          },
+          {
+            id: "call-3",
+            name: "run_terminal_command",
+            arguments: JSON.stringify({ command: "sed -i 's/a/b/' notes.md" }),
+          },
+        ],
+      }),
+      line({ type: "tool_result", tool_call_id: "call-1", content: "ok" }),
+      line({ type: "tool_result", tool_call_id: "call-2", content: "ok" }),
+      line({ type: "tool_result", tool_call_id: "call-3", content: "ok" }),
+    ].join("\n"),
+  );
+  assert.deepEqual(snapshot(messages).state.savedArtifacts, [
+    "docs/out.md",
+    "copy.txt",
+    "notes.md",
+  ]);
+});
+
+test("a shell command that writes nothing adds no saved artifact", () => {
+  const { messages } = parseChatHistory(
+    [
+      line({
+        type: "assistant",
+        content: "Running the checks.",
+        tool_calls: [
+          { id: "call-1", name: "run_terminal_command", arguments: '{"command":"npm test"}' },
+          {
+            id: "call-2",
+            name: "run_terminal_command",
+            arguments: JSON.stringify({ command: "cat <<EOF\nfake > nope.txt\nEOF" }),
+          },
+          {
+            id: "call-3",
+            name: "run_terminal_command",
+            arguments: JSON.stringify({ command: 'echo hi >> "$TARGET"' }),
+          },
+        ],
+      }),
+      line({ type: "tool_result", tool_call_id: "call-1", content: "ok" }),
+      line({ type: "tool_result", tool_call_id: "call-2", content: "ok" }),
+      line({ type: "tool_result", tool_call_id: "call-3", content: "ok" }),
+    ].join("\n"),
+  );
+  assert.deepEqual(snapshot(messages).state.savedArtifacts, []);
 });
 
 test("a record the reader cannot use is skipped, not guessed at", () => {

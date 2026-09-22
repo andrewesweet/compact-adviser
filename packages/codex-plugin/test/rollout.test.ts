@@ -347,6 +347,40 @@ test("an apply_patch delete removes a previously saved artifact", () => {
   assert.deepEqual(snapshot(rollout.messages).state.savedArtifacts, []);
 });
 
+test("shell redirection, tee, and sed -i in a shell call feed the saved artifacts", () => {
+  const shell = (script: string, id: string) =>
+    toolCall("shell", JSON.stringify({ command: ["bash", "-lc", script] }), id);
+  const rollout = mapRecords([
+    shell("echo hi > src/gen.ts", "call_1"),
+    toolOutput("done", "call_1"),
+    shell("cat in.txt | tee copy.txt", "call_2"),
+    toolOutput("done", "call_2"),
+    shell("sed -i 's/a/b/' notes.md", "call_3"),
+    toolOutput("done", "call_3"),
+  ]);
+  assert.deepEqual(snapshot(rollout.messages).state.savedArtifacts, [
+    "src/gen.ts",
+    "copy.txt",
+    "notes.md",
+  ]);
+});
+
+test("a shell call that writes nothing, or fails, adds no saved artifact", () => {
+  const shell = (script: string, id: string) =>
+    toolCall("shell", JSON.stringify({ command: ["bash", "-lc", script] }), id);
+  const rollout = mapRecords([
+    shell("cat <<EOF\nfake > nope.txt\nEOF", "call_1"),
+    toolOutput("done", "call_1"),
+    toolCall("shell", JSON.stringify({ command: ["npm", "test"] }), "call_2"),
+    toolOutput("ok", "call_2"),
+    shell("echo hi > $TARGET", "call_3"),
+    toolOutput("done", "call_3"),
+    shell("echo hi > out.txt", "call_4"),
+    toolOutput("Process exited with code 1", "call_4"),
+  ]);
+  assert.deepEqual(snapshot(rollout.messages).state.savedArtifacts, []);
+});
+
 test("readRollout reads a file, and answers empty for one it cannot read", () => {
   const lab = makeLab();
   try {

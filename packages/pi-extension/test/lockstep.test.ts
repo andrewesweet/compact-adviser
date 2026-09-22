@@ -16,6 +16,7 @@ import * as claudeState from "../../claude-mod/lib/state.ts";
 import * as codexDisable from "../../codex-plugin/src/disable.ts";
 import * as codex from "../../codex-plugin/src/judge.ts";
 import * as codexLog from "../../codex-plugin/src/log.ts";
+import * as codexRollout from "../../codex-plugin/src/rollout.ts";
 import * as codexSnapshot from "../../codex-plugin/src/snapshot.ts";
 import * as codexState from "../../codex-plugin/src/state.ts";
 import * as grokDisable from "../../grok-plugin/lib/disable.ts";
@@ -134,6 +135,36 @@ test("every package parses the same wire response into the same judgment", () =>
       pi.qualifies(pi.parseJudgment(response), 0.2),
     );
   }
+});
+
+test("every package extracts the same written paths from the same shell commands", () => {
+  const commands = [
+    "echo hello > out.txt",
+    "echo hello >> log.md",
+    "cat in.txt | tee copy.txt",
+    "sed -i 's/foo/bar/g' notes.md",
+    "sed -i.bak -e 's/a/b/' file.txt",
+    "cat <<EOF\nfake > nope.txt\nEOF",
+    'echo hi > "$TARGET"',
+    "make 2> err.log",
+    "run > out.log 2>&1",
+    "echo done > /dev/null",
+    "npm test",
+    "mkdir -p x && echo hi > x/a.md && sed -i s/a/b/ x/a.md",
+  ];
+  const extractors = [
+    claudeSnapshot.shellWrittenPaths,
+    codexRollout.shellWrittenPaths,
+    grokSnapshot.shellWrittenPaths,
+    piContext.shellWrittenPaths,
+  ];
+  for (const command of commands) {
+    const [first, ...rest] = extractors.map((extract) => extract(command));
+    for (const [i, got] of rest.entries())
+      assert.deepEqual(got, first, `${JSON.stringify(command)} extractor ${i + 1}`);
+  }
+  assert.deepEqual(claudeSnapshot.shellWrittenPaths("echo hi > out.txt"), ["out.txt"]);
+  assert.deepEqual(claudeSnapshot.shellWrittenPaths("cat <<EOF\nfake > nope.txt\nEOF"), []);
 });
 
 test("every package scrubs owned settings fields and known key values the same way", () => {

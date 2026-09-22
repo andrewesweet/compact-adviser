@@ -322,6 +322,64 @@ describe("judge input", () => {
     expect(view.state.savedArtifacts).toContain("/tmp/notes-[REDACTED].md");
   });
 
+  test("shell redirection, tee, and sed -i feed the saved-artifact list", () => {
+    const bash = (id: string, command: string) => ({
+      tool_use_id: id,
+      tool: "Bash",
+      input: { command },
+      text: "ok",
+    });
+    const view = snapshot([
+      { role: "user", text: "Save the findings, then verify.", toolUses: [] },
+      {
+        role: "assistant",
+        text: "Saved through the shell.",
+        toolUses: [
+          bash("s1", "echo hi > docs/out.md"),
+          bash("s2", "cat in.txt | tee copy.txt"),
+          bash("s3", "sed -i 's/a/b/' notes.md"),
+        ],
+      },
+    ]);
+    expect(view.state.savedArtifacts).toEqual(["docs/out.md", "copy.txt", "notes.md"]);
+  });
+
+  test("a Bash command that writes nothing adds no artifact, and sensitive or failed writes stay out", () => {
+    const bash = (
+      id: string,
+      command: string,
+      extra: Partial<{ isError: true; text: string }> = {},
+    ) => ({ tool_use_id: id, tool: "Bash", input: { command }, text: "ok", ...extra });
+    const view = snapshot([
+      { role: "user", text: "Run the checks.", toolUses: [] },
+      {
+        role: "assistant",
+        text: "Done.",
+        toolUses: [
+          bash("n1", "npm test"),
+          bash("n2", "cat <<EOF\nfake > nope.txt\nEOF"),
+          bash("n3", 'echo hi >> "$TARGET"'),
+          bash("n4", "echo hi > .env"),
+          bash("n5", "echo hi > failed.txt", { isError: true }),
+        ],
+      },
+    ]);
+    expect(view.state.savedArtifacts).toEqual([]);
+  });
+
+  test("the saved-artifact bound still holds when the shell writes many files", () => {
+    const uses = Array.from({ length: 10 }, (_, i) => ({
+      tool_use_id: `w${String(i)}`,
+      tool: "Bash",
+      input: { command: `echo run > run-${String(i)}.txt` },
+      text: "ok",
+    }));
+    const view = snapshot([{ role: "assistant", text: "", toolUses: uses }]);
+    expect(view.state.savedArtifacts).toHaveLength(8);
+    expect(view.state.savedArtifacts[0]).toBe("run-2.txt");
+    expect(view.state.savedArtifacts.at(-1)).toBe("run-9.txt");
+  });
+
   test("recent tail keeps the last 64 assistant messages when they fit the byte budget", () => {
     const older = Array.from({ length: 20 }, (_, i) => ({
       role: "assistant" as const,
