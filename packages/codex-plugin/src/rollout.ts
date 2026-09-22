@@ -216,6 +216,13 @@ type ShellToken =
       io?: string;
     };
 
+/** A quote left open at the end of a line, resumed with the line that follows. */
+interface ShellCarry {
+  quote: string;
+  word: string;
+  tokens: ShellToken[];
+}
+
 const SHELL_OPERATORS = [
   ";;&",
   ";;",
@@ -261,14 +268,18 @@ function shellOperatorAt(line: string, at: number): string | undefined {
 
 /**
  * Shell-lex one line into words and operators; quoted text stays literal.
- * `open` reports a quote the line never closes, so the caller can keep reading.
+ * A quote the line never closes is returned as `carry`, which the caller feeds
+ * back with the next line so each line is lexed exactly once.
  */
-function tokenizeShellLine(line: string): { tokens: ShellToken[]; open: boolean } {
-  const tokens: ShellToken[] = [];
+function tokenizeShellLine(
+  line: string,
+  carry?: ShellCarry,
+): { tokens: ShellToken[]; carry?: ShellCarry } {
+  const tokens: ShellToken[] = carry ? carry.tokens : [];
   let word = "";
   let quoted = false;
   let hasWord = false;
-  let open = false;
+  let open: string | undefined;
   let i = 0;
   const flush = () => {
     if (hasWord) tokens.push({ kind: "word", word: { text: word, quoted } });
@@ -276,29 +287,33 @@ function tokenizeShellLine(line: string): { tokens: ShellToken[]; open: boolean 
     quoted = false;
     hasWord = false;
   };
+  const readQuoted = (quote: string, from: number): number => {
+    let j = from;
+    while (j < line.length) {
+      if (quote === '"' && line.charAt(j) === "\\" && j + 1 < line.length) {
+        word += line.charAt(j + 1);
+        j += 2;
+        continue;
+      }
+      if (line.charAt(j) === quote) return j + 1;
+      word += line.charAt(j);
+      j++;
+    }
+    open = quote;
+    return j;
+  };
+  if (carry) {
+    word = `${carry.word}\n`;
+    quoted = true;
+    hasWord = true;
+    i = readQuoted(carry.quote, 0);
+  }
   while (i < line.length) {
     const ch = line.charAt(i);
     if (ch === "'" || ch === '"') {
-      let j = i + 1;
-      let closed = false;
-      while (j < line.length) {
-        if (ch === '"' && line.charAt(j) === "\\" && j + 1 < line.length) {
-          word += line.charAt(j + 1);
-          j += 2;
-          continue;
-        }
-        if (line.charAt(j) === ch) {
-          j++;
-          closed = true;
-          break;
-        }
-        word += line.charAt(j);
-        j++;
-      }
-      if (!closed) open = true;
+      i = readQuoted(ch, i + 1);
       quoted = true;
       hasWord = true;
-      i = j;
       continue;
     }
     if (ch === "\\" && i + 1 < line.length) {
@@ -329,8 +344,9 @@ function tokenizeShellLine(line: string): { tokens: ShellToken[]; open: boolean 
     hasWord = true;
     i++;
   }
+  if (open) return { tokens, carry: { quote: open, word, tokens } };
   flush();
-  return { tokens, open };
+  return { tokens };
 }
 
 /** A word becomes a written path only when it confidently names one real file. */
@@ -488,7 +504,7 @@ function collectShellWrittenPaths(
 export function shellWrittenPaths(command: string): string[] {
   const paths: string[] = [];
   const heredocs: { delimiter: string; dashed: boolean }[] = [];
-  let buffer = "";
+  let carry: ShellCarry | undefined;
   for (const line of command.split("\n")) {
     const pending = heredocs[0];
     if (pending) {
@@ -496,11 +512,10 @@ export function shellWrittenPaths(command: string): string[] {
       if (candidate === pending.delimiter) heredocs.shift();
       continue;
     }
-    buffer = buffer ? `${buffer}\n${line}` : line;
-    const lexed = tokenizeShellLine(buffer);
-    if (lexed.open) continue;
+    const lexed = tokenizeShellLine(line, carry);
+    carry = lexed.carry;
+    if (carry) continue;
     collectShellWrittenPaths(lexed.tokens, paths, heredocs);
-    buffer = "";
   }
   return paths;
 }

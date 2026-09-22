@@ -218,6 +218,8 @@ test("every package extracts the same written paths from the same shell commands
     "a.txt",
     "b.txt",
   ]);
+  const longQuoted = `python3 -c 'payload${"\n".repeat(5000)}' > report.txt`;
+  for (const extract of extractors) assert.deepEqual(extract(longQuoted), ["report.txt"]);
 });
 
 test("every package scrubs owned settings fields and known key values the same way", () => {
