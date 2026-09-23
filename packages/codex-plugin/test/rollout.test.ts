@@ -514,7 +514,7 @@ test("an exec program beyond the one exec_command call form adds no saved artifa
     // A literal JSON.parse still cannot decode — here, a bare identifier value — is dropped.
     toolCall(
       "exec",
-      'const r = await tools.exec_command({ cmd: line }); text(r.output);\n',
+      "const r = await tools.exec_command({ cmd: line }); text(r.output);\n",
       "call_9",
     ),
     toolOutput("done", "call_9"),

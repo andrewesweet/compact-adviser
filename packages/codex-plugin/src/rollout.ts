@@ -183,7 +183,10 @@ const SHELL_BINARIES = new Set(["sh", "bash", "zsh", "dash", "ksh", "ash"]);
  *  keys written as bare identifiers are quoted, keys already written as JSON strings are kept as
  *  they are; `undefined` when the literal never closes. Nothing else is rewritten, so a literal
  *  beyond this shape stays undecodable and is dropped by the `JSON.parse` that follows. */
-function objectLiteralJson(text: string, open: number): { json: string; close: number } | undefined {
+function objectLiteralJson(
+  text: string,
+  open: number,
+): { json: string; close: number } | undefined {
   const stack: string[] = [];
   let json = "";
   let quote = false;
