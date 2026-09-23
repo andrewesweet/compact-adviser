@@ -183,15 +183,15 @@ const SHELL_BINARIES = new Set(["sh", "bash", "zsh", "dash", "ksh", "ash"]);
  *  string literals; -1 when the literal never closes. */
 function objectLiteralClose(text: string, open: number): number {
   let depth = 0;
-  let quote: string | undefined;
+  let quote = false;
   for (let i = open; i < text.length; i++) {
     const ch = text.charAt(i);
-    if (quote !== undefined) {
+    if (quote) {
       if (ch === "\\") i++;
-      else if (ch === quote) quote = undefined;
+      else if (ch === '"') quote = false;
       continue;
     }
-    if (ch === '"' || ch === "'") quote = ch;
+    if (ch === '"') quote = true;
     else if (ch === "{") depth++;
     else if (ch === "}") {
       depth--;
@@ -205,23 +205,20 @@ function objectLiteralClose(text: string, open: number): number {
  *  named `exec` whose input is a small JavaScript program, `const r = await tools.exec_command(
  *  {"cmd": "...", ...}); text(r.output);` — the shell line sits in the object literal's `cmd`
  *  field. The program is data: nothing is executed, and no general JavaScript is parsed. Only
- *  that exact call form is recognised; any other program an `exec` call may carry, such as the
- *  `apply_patch` variant, yields nothing, like any other unrecognised input. */
+ *  that exact call form is recognised, binding the same identifier in both places; any other
+ *  program an `exec` call may carry, such as the `apply_patch` variant, yields nothing, like any
+ *  other unrecognised input. */
 function execProgramCommand(input: string): string {
-  const opened =
-    /^\s*(?:const\s+[A-Za-z_$][\w$]*\s*=\s*)?(?:await\s+)?tools\.exec_command\(\s*\{/.exec(input);
+  const opened = /^const\s+([A-Za-z_$][\w$]*)\s*=\s*await\s+tools\.exec_command\(\s*\{/.exec(input);
   if (!opened) return "";
   const open = opened[0].length - 1;
   const close = objectLiteralClose(input, open);
   if (close === -1) return "";
-  // Only the trailing output use may follow the call: `); text(r.output);` and end of program.
-  if (
-    !/^\s*\)\s*;?\s*(?:text\(\s*[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*\s*\)\s*;?\s*)?$/.test(
-      input.slice(close + 1),
-    )
-  ) {
-    return "";
-  }
+  // Only the output use of that same binding may follow the call: `); text(r.output);`.
+  const used = /^\s*\)\s*;\s*text\(\s*([A-Za-z_$][\w$]*)\.output\s*\)\s*;?\s*$/.exec(
+    input.slice(close + 1),
+  );
+  if (!used || used[1] !== opened[1]) return "";
   let parsed: unknown;
   try {
     parsed = JSON.parse(input.slice(open, close + 1));

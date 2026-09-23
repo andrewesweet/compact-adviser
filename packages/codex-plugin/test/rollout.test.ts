@@ -447,6 +447,35 @@ test("an exec call that reads, or writes nothing, adds no saved artifact", () =>
   assert.deepEqual(snapshot(rollout.messages).state.savedArtifacts, []);
 });
 
+test("the exec spellings Codex really emits feed the saved artifacts", () => {
+  const call = (program: string, id: string) => [
+    toolCall("exec", program, id),
+    toolOutput("done", id),
+  ];
+  const rollout = mapRecords([
+    // No final semicolon after the output use.
+    ...call(
+      'const r = await tools.exec_command({"cmd":"echo hi > spaced.txt"}); text(r.output)\n',
+      "call_1",
+    ),
+    // No spaces around `=`, and the output use on its own line.
+    ...call(
+      'const r=await tools.exec_command({"cmd":"echo hi > tight.txt"});\ntext(r.output);\n',
+      "call_2",
+    ),
+    // A binding named something other than `r`.
+    ...call(
+      'const out = await tools.exec_command({"cmd":"echo hi > named.txt"}); text(out.output);\n',
+      "call_3",
+    ),
+  ]);
+  assert.deepEqual(snapshot(rollout.messages).state.savedArtifacts, [
+    "spaced.txt",
+    "tight.txt",
+    "named.txt",
+  ]);
+});
+
 test("an exec program beyond the one exec_command call form adds no saved artifact", () => {
   const rollout = mapRecords([
     // The apply_patch program variant Codex sends under the same `exec` name.
@@ -484,6 +513,23 @@ test("an exec program beyond the one exec_command call form adds no saved artifa
       "call_5",
     ),
     toolOutput("done", "call_5"),
+    // An output use of a different binding than the call's is dropped.
+    toolCall(
+      "exec",
+      'const r = await tools.exec_command({"cmd":"echo hi > other.txt"}); text(s.output);\n',
+      "call_6",
+    ),
+    toolOutput("done", "call_6"),
+    // A call without the `const <id> = await` binding is dropped.
+    toolCall("exec", 'await tools.exec_command({"cmd":"echo hi > bare.txt"});\n', "call_7"),
+    toolOutput("done", "call_7"),
+    // An output use other than `<id>.output` is dropped.
+    toolCall(
+      "exec",
+      'const r = await tools.exec_command({"cmd":"echo hi > chained.txt"}); text(r.output.text);\n',
+      "call_8",
+    ),
+    toolOutput("done", "call_8"),
   ]);
   assert.deepEqual(snapshot(rollout.messages).state.savedArtifacts, []);
 });
