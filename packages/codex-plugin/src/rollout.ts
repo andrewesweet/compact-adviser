@@ -179,6 +179,60 @@ const SHELL_TOOLS = new Set(["shell", "local_shell", "unified_exec"]);
 /** Interpreters whose `-c`/`-lc` argument is a shell line. */
 const SHELL_BINARIES = new Set(["sh", "bash", "zsh", "dash", "ksh", "ash"]);
 
+/** Index of the `}` closing the object literal that opens at `open`, counting braces outside
+ *  string literals; -1 when the literal never closes. */
+function objectLiteralClose(text: string, open: number): number {
+  let depth = 0;
+  let quote: string | undefined;
+  for (let i = open; i < text.length; i++) {
+    const ch = text.charAt(i);
+    if (quote !== undefined) {
+      if (ch === "\\") i++;
+      else if (ch === quote) quote = undefined;
+      continue;
+    }
+    if (ch === '"' || ch === "'") quote = ch;
+    else if (ch === "{") depth++;
+    else if (ch === "}") {
+      depth--;
+      if (depth === 0) return i;
+    }
+  }
+  return -1;
+}
+
+/** The shell line a Codex `exec` call carries. Codex records shell work as a `custom_tool_call`
+ *  named `exec` whose input is a small JavaScript program, `const r = await tools.exec_command(
+ *  {"cmd": "...", ...}); text(r.output);` — the shell line sits in the object literal's `cmd`
+ *  field. The program is data: nothing is executed, and no general JavaScript is parsed. Only
+ *  that exact call form is recognised; any other program an `exec` call may carry, such as the
+ *  `apply_patch` variant, yields nothing, like any other unrecognised input. */
+function execProgramCommand(input: string): string {
+  const opened =
+    /^\s*(?:const\s+[A-Za-z_$][\w$]*\s*=\s*)?(?:await\s+)?tools\.exec_command\(\s*\{/.exec(input);
+  if (!opened) return "";
+  const open = opened[0].length - 1;
+  const close = objectLiteralClose(input, open);
+  if (close === -1) return "";
+  // Only the trailing output use may follow the call: `); text(r.output);` and end of program.
+  if (
+    !/^\s*\)\s*;?\s*(?:text\(\s*[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*\s*\)\s*;?\s*)?$/.test(
+      input.slice(close + 1),
+    )
+  ) {
+    return "";
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(input.slice(open, close + 1));
+  } catch {
+    return "";
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return "";
+  const command = (parsed as Record<string, unknown>).cmd;
+  return typeof command === "string" && command !== "" ? command : "";
+}
+
 /** The shell command line a shell tool call carries: a string command as written, or the script a
  *  `bash -lc`/`-c` wrapper names. Argv words are already-split literals, never a shell line. */
 function shellCommandText(argumentsJson: string): string {
@@ -576,6 +630,10 @@ export function shellWrittenPaths(command: string): string[] {
 
 function toolPaths(name: string, input: string): { written: string[]; removed: string[] } {
   if (name === "apply_patch") return patchChanges(input);
+  if (name === "exec") {
+    const command = execProgramCommand(input);
+    return { written: command ? shellWrittenPaths(command) : [], removed: [] };
+  }
   if (SHELL_TOOLS.has(name)) {
     const command = shellCommandText(input);
     return { written: command ? shellWrittenPaths(command) : [], removed: [] };

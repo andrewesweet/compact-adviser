@@ -19,6 +19,8 @@ import {
   settledRollout,
   TYPESAFE_KEY,
   tokenCount,
+  toolCall,
+  toolOutput,
   userMessage,
   writeRollout,
 } from "./support.ts";
@@ -61,6 +63,37 @@ test("a settled, large-enough checkpoint is judged once and hints", async () => 
     assert.equal(body.model, "jev-latest");
     assert.deepEqual(body.state.savedArtifacts, ["src/parser.ts"]);
     assert.ok(!JSON.stringify(body).includes(TYPESAFE_KEY), "the key never travels in the body");
+  });
+});
+
+test("an exec program's shell writes reach the saved artifacts end to end", async () => {
+  await withLab(async (lab) => {
+    // Codex records shell work as a custom_tool_call named `exec` whose input is a JavaScript
+    // program calling tools.exec_command; the shell line sits in its `cmd` field.
+    const exec = (cmd: string, id: string) =>
+      toolCall(
+        "exec",
+        `const r = await tools.exec_command({"cmd":${JSON.stringify(cmd)},"workdir":"${lab.cwd}","yield_time_ms":10000,"max_output_tokens":20000}); text(r.output);\n`,
+        id,
+      );
+    const bulk = "Implementation notes for the parser module. ".repeat(2600);
+    writeRollout(lab.transcript, [
+      sessionMeta(),
+      userMessage("Generate the table, then report."),
+      exec("sed -n '1,240p' src/parser.ts", "call_1"),
+      toolOutput(`the file contents\n${bulk}`, "call_1"),
+      exec("node gen.js > src/table.ts", "call_2"),
+      toolOutput("done", "call_2"),
+      exec("cat in.txt | tee copy.txt", "call_3"),
+      toolOutput("done", "call_3"),
+      assistantMessage("Done: the table is generated and committed."),
+      tokenCount(70000),
+    ]);
+    const typesafe = fakeTypesafe();
+    await handle(stop(lab), environment(lab, { fetch: typesafe.fetch }));
+
+    const body = typesafe.requests[0]?.body as { state: { savedArtifacts: string[] } };
+    assert.deepEqual(body.state.savedArtifacts, ["src/table.ts", "copy.txt"]);
   });
 });
 

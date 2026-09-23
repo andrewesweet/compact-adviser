@@ -34,7 +34,8 @@ export const RECENT_TAIL_MESSAGES = 64;
 export const TOOL_RESULT_BUDGET = 512;
 export const SUMMARY_PREFIX = "This session is being continued from a previous conversation";
 /** Codex tool calls that write workspace files; `apply_patch` is the freeform one, and a shell
- *  call's paths are the writes its own command line makes, already extracted in rollout.ts. */
+ *  call's paths — the writes its own command line makes — are already extracted in rollout.ts,
+ *  whether the call is named `shell` or Codex's `exec` program wrapper. */
 const WRITE_TOOLS = new Set([
   "apply_patch",
   "write_file",
@@ -42,6 +43,7 @@ const WRITE_TOOLS = new Set([
   "shell",
   "local_shell",
   "unified_exec",
+  "exec",
 ]);
 
 function clip(text: string, limit: number): { text: string; truncated: boolean } {
