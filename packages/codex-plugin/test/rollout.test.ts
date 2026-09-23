@@ -468,11 +468,23 @@ test("the exec spellings Codex really emits feed the saved artifacts", () => {
       'const out = await tools.exec_command({"cmd":"echo hi > named.txt"}); text(out.output);\n',
       "call_3",
     ),
+    // Bare identifier keys, as Codex writes them most often.
+    ...call(
+      'const r = await tools.exec_command({ cmd: "echo hi > loose.txt", workdir: "/home/me" }); text(r.output);\n',
+      "call_4",
+    ),
+    // Identifier and JSON string keys mixed, around a nested literal and an array value.
+    ...call(
+      'const r = await tools.exec_command({cmd:"echo hi > mixed.txt","env":{PATH:"/bin"},argv:["a","b"]}); text(r.output);\n',
+      "call_5",
+    ),
   ]);
   assert.deepEqual(snapshot(rollout.messages).state.savedArtifacts, [
     "spaced.txt",
     "tight.txt",
     "named.txt",
+    "loose.txt",
+    "mixed.txt",
   ]);
 });
 
@@ -492,13 +504,27 @@ test("an exec program beyond the one exec_command call form adds no saved artifa
       "call_2",
     ),
     toolOutput("done", "call_2"),
-    // A literal JSON.parse cannot decode unambiguously — here, an unquoted key — is dropped.
+    // `cmd:` text inside another key's string value is not a `cmd` key, so nothing is written.
     toolCall(
       "exec",
-      'const r = await tools.exec_command({ cmd: "echo hi > loose.txt" }); text(r.output);\n',
+      'const r = await tools.exec_command({workdir:"/home/me", note:"cmd: \\"echo hi > trap.txt\\""}); text(r.output);\n',
       "call_3",
     ),
     toolOutput("done", "call_3"),
+    // A literal JSON.parse still cannot decode — here, a bare identifier value — is dropped.
+    toolCall(
+      "exec",
+      'const r = await tools.exec_command({ cmd: line }); text(r.output);\n',
+      "call_9",
+    ),
+    toolOutput("done", "call_9"),
+    // A spread element is beyond the recognised literal, so it is dropped.
+    toolCall(
+      "exec",
+      'const r = await tools.exec_command({ ...base, cmd: "echo hi > spread.txt" }); text(r.output);\n',
+      "call_10",
+    ),
+    toolOutput("done", "call_10"),
     // A `cmd` that is not a string is dropped.
     toolCall(
       "exec",
