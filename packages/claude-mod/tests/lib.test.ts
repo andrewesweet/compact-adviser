@@ -339,6 +339,9 @@ describe("judge input", () => {
           bash("s2", "cat in.txt | tee copy.txt"),
           bash("s3", "sed -i -e 's/a/b/' notes.md"),
           bash("s4", "echo hi >| clobber.txt"),
+          bash("s5", "sed --in-place 's/a/b/' in-place-long.txt"),
+          bash("s6", "sed --in-place=.bak 's/a/b/' in-place-suffix.txt"),
+          bash("s7", "sed -i 's/a/b/' in-place-ambiguous.txt"),
         ],
       },
     ]);
@@ -347,6 +350,8 @@ describe("judge input", () => {
       "copy.txt",
       "notes.md",
       "clobber.txt",
+      "in-place-long.txt",
+      "in-place-suffix.txt",
     ]);
   });
 

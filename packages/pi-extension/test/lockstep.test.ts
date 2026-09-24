@@ -150,6 +150,8 @@ test("every package extracts the same written paths from the same shell commands
     "sed -i.bak 's/a/b/' file.txt",
     "sed --in-place=.bak 's/a/b/' file.txt",
     "sed --in-place -e 's/a/b/' file.txt",
+    "sed --in-place 's/a/b/' in-place-long.txt",
+    "sed --in-place=.bak 's/a/b/' in-place-suffix.txt",
     "sed -i '' -e 's/a/b/' bsd.txt",
     "sed -i '' 's/a/b/' bsd.txt",
     "sed -i .bak -e 's/x/y/' f.txt",
@@ -201,6 +203,14 @@ test("every package extracts the same written paths from the same shell commands
   assert.deepEqual(claudeSnapshot.shellWrittenPaths("sed --in-place=.bak 's/a/b/' file.txt"), [
     "file.txt",
   ]);
+  assert.deepEqual(claudeSnapshot.shellWrittenPaths("sed --in-place 's/a/b/' in-place-long.txt"), [
+    "in-place-long.txt",
+  ]);
+  assert.deepEqual(
+    claudeSnapshot.shellWrittenPaths("sed --in-place=.bak 's/a/b/' in-place-suffix.txt"),
+    ["in-place-suffix.txt"],
+  );
+  assert.deepEqual(claudeSnapshot.shellWrittenPaths("sed -i 's/a/b/' in-place-ambiguous.txt"), []);
   assert.deepEqual(claudeSnapshot.shellWrittenPaths("sed -i .bak -e 's/x/y/' f.txt"), ["f.txt"]);
   assert.deepEqual(claudeSnapshot.shellWrittenPaths("sed -i .bak f.txt"), []);
   assert.deepEqual(claudeSnapshot.shellWrittenPaths("sed -i 's/foo/bar/g' notes.md"), []);

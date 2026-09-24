@@ -359,12 +359,20 @@ test("shell redirection, tee, and sed -i in a shell call feed the saved artifact
     toolOutput("done", "call_3"),
     shell("echo hi >| clobber.txt", "call_4"),
     toolOutput("done", "call_4"),
+    shell("sed --in-place 's/a/b/' in-place-long.txt", "call_5"),
+    toolOutput("done", "call_5"),
+    shell("sed --in-place=.bak 's/a/b/' in-place-suffix.txt", "call_6"),
+    toolOutput("done", "call_6"),
+    shell("sed -i 's/a/b/' in-place-ambiguous.txt", "call_7"),
+    toolOutput("done", "call_7"),
   ]);
   assert.deepEqual(snapshot(rollout.messages).state.savedArtifacts, [
     "src/gen.ts",
     "copy.txt",
     "notes.md",
     "clobber.txt",
+    "in-place-long.txt",
+    "in-place-suffix.txt",
   ]);
 });
 
@@ -418,12 +426,20 @@ test("shell redirection, tee, and sed -i in Codex's exec program feed the saved 
     toolOutput("done", "call_3"),
     exec("echo hi >| clobber.txt", "call_4"),
     toolOutput("done", "call_4"),
+    exec("sed --in-place 's/a/b/' in-place-long.txt", "call_5"),
+    toolOutput("done", "call_5"),
+    exec("sed --in-place=.bak 's/a/b/' in-place-suffix.txt", "call_6"),
+    toolOutput("done", "call_6"),
+    exec("sed -i 's/a/b/' in-place-ambiguous.txt", "call_7"),
+    toolOutput("done", "call_7"),
   ]);
   assert.deepEqual(snapshot(rollout.messages).state.savedArtifacts, [
     "src/gen.ts",
     "copy.txt",
     "notes.md",
     "clobber.txt",
+    "in-place-long.txt",
+    "in-place-suffix.txt",
   ]);
 });
 

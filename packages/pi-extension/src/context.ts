@@ -298,7 +298,6 @@ function shellSedTargets(args: readonly ShellWord[], paths: string[]): void {
     }
     if (text === "--in-place") {
       inPlace = true;
-      bareInPlace = true;
     } else if (text.startsWith("--in-place=")) {
       inPlace = true;
     } else if (text === "--expression" || text === "--file") {

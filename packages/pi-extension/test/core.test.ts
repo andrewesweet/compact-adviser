@@ -185,7 +185,15 @@ test("a compact-adviser.json read keeps mode diagnostics and drops the saved key
 
 test("bash redirection, tee, and sed -i feed the saved-artifact list", (t) => {
   const h = harness(t);
-  for (const name of ["docs-out.md", "copy.txt", "notes.md", "clobber.txt"])
+  for (const name of [
+    "docs-out.md",
+    "copy.txt",
+    "notes.md",
+    "clobber.txt",
+    "in-place-long.txt",
+    "in-place-suffix.txt",
+    "in-place-ambiguous.txt",
+  ])
     writeFileSync(join(h.dir, name), "x");
   const bash = (id: string, command: string) => ({
     ...assistant(""),
@@ -200,12 +208,20 @@ test("bash redirection, tee, and sed -i feed the saved-artifact list", (t) => {
   h.sm.appendMessage(toolResult("ok", "bash", "b3"));
   h.sm.appendMessage(bash("b4", "echo hi >| clobber.txt"));
   h.sm.appendMessage(toolResult("ok", "bash", "b4"));
+  h.sm.appendMessage(bash("b5", "sed --in-place 's/a/b/' in-place-long.txt"));
+  h.sm.appendMessage(toolResult("ok", "bash", "b5"));
+  h.sm.appendMessage(bash("b6", "sed --in-place=.bak 's/a/b/' in-place-suffix.txt"));
+  h.sm.appendMessage(toolResult("ok", "bash", "b6"));
+  h.sm.appendMessage(bash("b7", "sed -i 's/a/b/' in-place-ambiguous.txt"));
+  h.sm.appendMessage(toolResult("ok", "bash", "b7"));
   const view = snapshot(h.ctx);
   assert.deepEqual(view.state.savedArtifacts, [
     "docs-out.md",
     "copy.txt",
     "notes.md",
     "clobber.txt",
+    "in-place-long.txt",
+    "in-place-suffix.txt",
   ]);
 });
 

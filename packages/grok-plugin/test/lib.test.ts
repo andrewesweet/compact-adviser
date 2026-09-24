@@ -88,12 +88,32 @@ test("shell redirection, tee, and sed -i feed the saved-artifact list", () => {
             name: "run_terminal_command",
             arguments: JSON.stringify({ command: "echo hi >| clobber.txt" }),
           },
+          {
+            id: "call-5",
+            name: "run_terminal_command",
+            arguments: JSON.stringify({ command: "sed --in-place 's/a/b/' in-place-long.txt" }),
+          },
+          {
+            id: "call-6",
+            name: "run_terminal_command",
+            arguments: JSON.stringify({
+              command: "sed --in-place=.bak 's/a/b/' in-place-suffix.txt",
+            }),
+          },
+          {
+            id: "call-7",
+            name: "run_terminal_command",
+            arguments: JSON.stringify({ command: "sed -i 's/a/b/' in-place-ambiguous.txt" }),
+          },
         ],
       }),
       line({ type: "tool_result", tool_call_id: "call-1", content: "ok" }),
       line({ type: "tool_result", tool_call_id: "call-2", content: "ok" }),
       line({ type: "tool_result", tool_call_id: "call-3", content: "ok" }),
       line({ type: "tool_result", tool_call_id: "call-4", content: "ok" }),
+      line({ type: "tool_result", tool_call_id: "call-5", content: "ok" }),
+      line({ type: "tool_result", tool_call_id: "call-6", content: "ok" }),
+      line({ type: "tool_result", tool_call_id: "call-7", content: "ok" }),
     ].join("\n"),
   );
   assert.deepEqual(snapshot(messages).state.savedArtifacts, [
@@ -101,6 +121,8 @@ test("shell redirection, tee, and sed -i feed the saved-artifact list", () => {
     "copy.txt",
     "notes.md",
     "clobber.txt",
+    "in-place-long.txt",
+    "in-place-suffix.txt",
   ]);
 });
 
