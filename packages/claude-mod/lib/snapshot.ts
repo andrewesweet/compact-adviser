@@ -117,9 +117,10 @@ const SHELL_COND_INTRO_WORDS = new Set([
 ]);
 /**
  * Bash reserved words that may stand directly before a command name, so `tee`
- * after one is still the command. Condition openers (`if`, `while`, `until`)
- * stay out: what follows them is condition syntax, not confidently one
- * command, so writes inside it stay dropped.
+ * after one is still the command. `elif` is admitted because what follows it
+ * begins a new command list, the same way `else` does. The remaining condition
+ * openers (`if`, `while`, `until`) stay out as a deliberate conservative miss,
+ * so writes introduced by them stay dropped.
  */
 const SHELL_CMD_INTRO_WORDS = new Set(["then", "do", "else", "elif", "!", "{"]);
 
