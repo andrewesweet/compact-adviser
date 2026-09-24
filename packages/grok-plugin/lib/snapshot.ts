@@ -131,6 +131,13 @@ const SHELL_COND_INTRO_WORDS = new Set([
   "}",
   "!",
 ]);
+/**
+ * Bash reserved words that may stand directly before a command name, so `tee`
+ * after one is still the command. Condition openers (`if`, `while`, `until`)
+ * stay out: what follows them is condition syntax, not confidently one
+ * command, so writes inside it stay dropped.
+ */
+const SHELL_CMD_INTRO_WORDS = new Set(["then", "do", "else", "elif", "!", "{"]);
 
 function shellOperatorAt(line: string, at: number): string | undefined {
   for (const op of SHELL_OPERATORS) if (line.startsWith(op, at)) return op;
@@ -311,7 +318,11 @@ function matchShellWriters(words: readonly ShellWord[], paths: string[]): void {
   while (start < words.length) {
     const word = words[start];
     if (!word) break;
-    if (SHELL_PREFIX_WORDS.has(word.text) || /^[A-Za-z_][A-Za-z0-9_]*=/.test(word.text)) {
+    if (
+      SHELL_PREFIX_WORDS.has(word.text) ||
+      SHELL_CMD_INTRO_WORDS.has(word.text) ||
+      /^[A-Za-z_][A-Za-z0-9_]*=/.test(word.text)
+    ) {
       start++;
       continue;
     }

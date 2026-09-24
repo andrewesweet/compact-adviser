@@ -180,6 +180,17 @@ test("every package extracts the same written paths from the same shell commands
     'for v in 1.0 2.0; do [[ "$v" > "1.2" ]] && echo newer; done',
     'while read l; do [[ "$l" > lim.txt ]] && echo; done < in',
     "{ [[ a > b.txt ]]; }",
+    "if [ -f a ]; then tee out.txt; fi",
+    "if [ -f a ]; then sed -i -e s/a/b/ notes.md; fi",
+    "for i in 1; do tee t.txt; done",
+    "{ tee brace.txt; }",
+    "! tee negated.txt",
+    "if :; then :; else sed -i -e s/a/b/ else.md; fi",
+    "if :; then :; elif tee elif.txt; then :; fi",
+    "if [ -f a ]; then cat out.txt; fi",
+    "for tee in a b; do :; done",
+    "if grep -q sed notes.md; then :; fi",
+    "if for tee in a b; do :; done; then :; fi",
   ];
   const extractors = [
     claudeSnapshot.shellWrittenPaths,
@@ -247,6 +258,19 @@ test("every package extracts the same written paths from the same shell commands
     [],
   );
   assert.deepEqual(claudeSnapshot.shellWrittenPaths("{ [[ a > b.txt ]]; }"), []);
+  assert.deepEqual(claudeSnapshot.shellWrittenPaths("if [ -f a ]; then tee out.txt; fi"), [
+    "out.txt",
+  ]);
+  assert.deepEqual(
+    claudeSnapshot.shellWrittenPaths("if [ -f a ]; then sed -i -e s/a/b/ notes.md; fi"),
+    ["notes.md"],
+  );
+  assert.deepEqual(claudeSnapshot.shellWrittenPaths("for i in 1; do tee t.txt; done"), ["t.txt"]);
+  assert.deepEqual(claudeSnapshot.shellWrittenPaths("{ tee brace.txt; }"), ["brace.txt"]);
+  assert.deepEqual(claudeSnapshot.shellWrittenPaths("! tee negated.txt"), ["negated.txt"]);
+  assert.deepEqual(claudeSnapshot.shellWrittenPaths("if [ -f a ]; then cat out.txt; fi"), []);
+  assert.deepEqual(claudeSnapshot.shellWrittenPaths("for tee in a b; do :; done"), []);
+  assert.deepEqual(claudeSnapshot.shellWrittenPaths("if grep -q sed notes.md; then :; fi"), []);
   const longQuoted = `python3 -c 'payload${"\n".repeat(5000)}' > report.txt`;
   for (const extract of extractors) assert.deepEqual(extract(longQuoted), ["report.txt"]);
 });

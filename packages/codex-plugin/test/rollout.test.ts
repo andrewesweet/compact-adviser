@@ -322,6 +322,34 @@ test("patchPaths names what an apply_patch body writes, and not what it deletes"
   assert.deepEqual(patchPaths("not a patch"), []);
 });
 
+test("tee and in-place sed after a bash reserved word feed the saved artifacts", () => {
+  const shell = (script: string, id: string) =>
+    toolCall("shell", JSON.stringify({ command: ["bash", "-lc", script] }), id);
+  const rollout = mapRecords([
+    // Near misses: after a reserved word the next word is not the tee/sed command.
+    shell("if [ -f a ]; then cat out.txt; fi", "call_1"),
+    toolOutput("done", "call_1"),
+    shell("for tee in a b; do :; done", "call_2"),
+    toolOutput("done", "call_2"),
+    shell("if grep -q sed notes.md; then :; fi", "call_3"),
+    toolOutput("done", "call_3"),
+    shell("if [ -f a ]; then tee out.txt; fi", "call_4"),
+    toolOutput("done", "call_4"),
+    shell("if [ -f a ]; then sed -i -e s/a/b/ notes.md; fi", "call_5"),
+    toolOutput("done", "call_5"),
+    shell("for i in 1; do tee t.txt; done", "call_6"),
+    toolOutput("done", "call_6"),
+    shell("{ tee brace.txt; }", "call_7"),
+    toolOutput("done", "call_7"),
+  ]);
+  assert.deepEqual(snapshot(rollout.messages).state.savedArtifacts, [
+    "out.txt",
+    "notes.md",
+    "t.txt",
+    "brace.txt",
+  ]);
+});
+
 test("an apply_patch move stops listing the source as a saved artifact", () => {
   const rollout = mapRecords([
     toolCall(

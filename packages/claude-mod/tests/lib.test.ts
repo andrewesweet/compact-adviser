@@ -350,6 +350,33 @@ describe("judge input", () => {
     ]);
   });
 
+  test("tee and in-place sed after a bash reserved word still feed the saved artifacts", () => {
+    const bash = (id: string, command: string) => ({
+      tool_use_id: id,
+      tool: "Bash",
+      input: { command },
+      text: "ok",
+    });
+    const view = snapshot([
+      { role: "user", text: "Save the findings, then verify.", toolUses: [] },
+      {
+        role: "assistant",
+        text: "Captured inside the compound commands.",
+        toolUses: [
+          // Near misses: after a reserved word the next word is not the tee/sed command.
+          bash("n1", "if [ -f a ]; then cat out.txt; fi"),
+          bash("n2", "for tee in a b; do :; done"),
+          bash("n3", "if grep -q sed notes.md; then :; fi"),
+          bash("r1", "if [ -f a ]; then tee out.txt; fi"),
+          bash("r2", "if [ -f a ]; then sed -i -e s/a/b/ notes.md; fi"),
+          bash("r3", "for i in 1; do tee t.txt; done"),
+          bash("r4", "{ tee brace.txt; }"),
+        ],
+      },
+    ]);
+    expect(view.state.savedArtifacts).toEqual(["out.txt", "notes.md", "t.txt", "brace.txt"]);
+  });
+
   test("a Bash command that writes nothing adds no artifact, and sensitive or failed writes stay out", () => {
     const bash = (
       id: string,
